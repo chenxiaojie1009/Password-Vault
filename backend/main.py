@@ -37,6 +37,7 @@ from schemas import (
     IPCreate, IPResponse, MACCreate, MACResponse,
     PasswordHistoryResponse, AuditLogResponse,
     PasswordStrengthResult, BatchImportResult, BackupInfo, ExportRequest, ChangePasswordRequest,
+    UserUpdate,
 )
 from auth import (
     hash_password, verify_password, encrypt_password, decrypt_password,
@@ -135,20 +136,29 @@ def create_user(body: UserCreate, db: Session = Depends(get_db), admin_user: Use
     try: role = UserRole(body.role)
     except ValueError: raise HTTPException(status_code=400, detail="无效角色")
     u = User(username=body.username, password_hash=hash_password(body.password),
-             display_name=body.display_name or body.username, role=role)
+             display_name=body.display_name or body.username, role=role,
+             must_change_password=True)
     db.add(u); db.commit(); db.refresh(u)
     write_audit(db, admin_user.id, "create_user", "user", u.id, f"创建用户 {u.username}")
     return u
 
 @app.put("/api/users/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, body: UserCreate, db: Session = Depends(get_db),
+def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db),
                 admin_user: User = Depends(require_admin)):
     u = db.query(User).filter(User.id == user_id).first()
     if not u: raise HTTPException(status_code=404, detail="用户不存在")
-    u.display_name = body.display_name or u.display_name
-    if body.password: u.password_hash = hash_password(body.password)
-    try: u.role = UserRole(body.role)
-    except ValueError: raise HTTPException(status_code=400, detail="无效角色")
+    if body.display_name is not None: u.display_name = body.display_name
+    if body.password is not None and body.password != "":
+        u.password_hash = hash_password(body.password)
+        u.must_change_password = True
+    if body.role is not None:
+        try: u.role = UserRole(body.role)
+        except ValueError: raise HTTPException(status_code=400, detail="无效角色")
+    if body.is_active is not None:
+        if u.id == admin_user.id and body.is_active == False:
+            raise HTTPException(status_code=400, detail="不可禁用自己")
+        u.is_active = body.is_active
+    if body.must_change_password is not None: u.must_change_password = body.must_change_password
     db.commit(); db.refresh(u)
     write_audit(db, admin_user.id, "update_user", "user", u.id, f"更新用户 {u.username}")
     return u

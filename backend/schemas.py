@@ -12,6 +12,14 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=6, max_length=128)
     display_name: str = ""; role: str = "viewer"
 
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = Field(default=None, min_length=6, max_length=128)
+    display_name: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+    must_change_password: Optional[bool] = None
+
 class UserResponse(BaseModel):
     id: int; username: str; display_name: str; role: str; is_active: bool; must_change_password: bool = False; created_at: datetime
     model_config = {"from_attributes": True}

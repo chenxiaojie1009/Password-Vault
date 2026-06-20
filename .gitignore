@@ -12,3 +12,4 @@ frontend-dist/
 deploy/
 *.egg-info/
 .pytest_cache/
+.kunsdd/
