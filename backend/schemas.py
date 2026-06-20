@@ -44,29 +44,30 @@ class DeviceAccountResponse(BaseModel):
 
 class DeviceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=256); device_type: str = "其他"
-    location: str = ""; notes: str = ""
+    location: str = ""; notes: str = ""; is_network_involved: bool = False
     ips: List[IPCreate] = []; macs: List[MACCreate] = []; accounts: List[DeviceAccountCreate] = []
 
 class DeviceUpdate(BaseModel):
     name: Optional[str] = None; device_type: Optional[str] = None
     location: Optional[str] = None; notes: Optional[str] = None
+    is_network_involved: Optional[bool] = None
     ips: Optional[List[IPCreate]] = None; macs: Optional[List[MACCreate]] = None
 
 class DeviceResponse(BaseModel):
     id: int; name: str; device_type: str; location: str; notes: str
-    created_at: datetime; updated_at: datetime
+    is_network_involved: bool = False; created_at: datetime; updated_at: datetime
     ips: List[IPResponse] = []; macs: List[MACResponse] = []; accounts: List[DeviceAccountResponse] = []
     model_config = {"from_attributes": True}
 
 class DeviceListItem(BaseModel):
     id: int; name: str; device_type: str; ip_address: str = ""; mac_address: str = ""
-    account_count: int = 0; updated_at: datetime
+    account_count: int = 0; is_network_involved: bool = False; updated_at: datetime
     model_config = {"from_attributes": True}
 
 class PasswordHistoryResponse(BaseModel):
     id: int; account_id: int; changed_by: int
     changed_by_name: str = ""; changed_at: datetime; reason: str
-    account_name: str = ""; device_name: str = ""
+    old_password: str = ""; account_name: str = ""; device_name: str = ""
     model_config = {"from_attributes": True}
 
 class AuditLogResponse(BaseModel):

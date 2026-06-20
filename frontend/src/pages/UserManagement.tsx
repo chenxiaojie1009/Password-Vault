@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, Popconfirm, message, Typography } from "antd";
-import { TeamOutlined, PlusOutlined, KeyOutlined, EditOutlined, DownloadOutlined } from "@ant-design/icons";
+import { TeamOutlined, PlusOutlined, KeyOutlined, EditOutlined, DownloadOutlined, ImportOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
 const { Title } = Typography;
-const roleColors: Record<string, string> = { admin: "red", editor: "blue", viewer: "green" };
+const roleColors: Record<string, string> = { admin: "red", editor: "blue", viewer: "green", operator: "orange" };
 
 interface UserRecord {
   id: number; username: string; display_name: string; role: string;
@@ -22,7 +22,7 @@ export default function UserManagement() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [resetForm] = Form.useForm();
-  const [roleOptions, setRoleOptions] = useState<Record<string, string>>({"admin":"管理员","editor":"编辑者","viewer":"查看者"});
+  const [roleOptions, setRoleOptions] = useState<Record<string, string>>({"admin":"管理员","editor":"编辑者","viewer":"查看者","operator":"运维者"});
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -33,7 +33,7 @@ export default function UserManagement() {
   useEffect(() => {
     fetchUsers();
     api.get("/config/user_roles").then(r => {
-      const map: Record<string, string> = {"admin":"管理员","editor":"编辑者","viewer":"查看者"};
+      const map: Record<string, string> = {"admin":"管理员","editor":"编辑者","viewer":"查看者","operator":"运维者"};
       (r.data || []).forEach((i: any) => { if (!map[i.value]) map[i.value] = i.value; });
       setRoleOptions(map);
     }).catch(() => {});
@@ -101,6 +101,21 @@ export default function UserManagement() {
     } catch { message.error("导出失败"); }
   };
 
+  const handleImportUsers = () => {
+    const input = document.createElement("input"); input.type = "file"; input.accept = ".xlsx,.xls";
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      const fd = new FormData(); fd.append("file", file);
+      try {
+        const res = await api.post("/users/import", fd);
+        message.success("导入完成：共 " + res.data.total + " 条，成功 " + res.data.success);
+        if (res.data.errors?.length) message.warning("部分失败：" + res.data.errors.slice(0, 3).join("; "));
+        fetchUsers();
+      } catch { message.error("导入失败"); }
+    };
+    input.click();
+  };
+
   const columns = [
     { title: "用户名", dataIndex: "username", width: 120 },
     { title: "显示名", dataIndex: "display_name", width: 120 },
@@ -140,6 +155,7 @@ export default function UserManagement() {
         <Title level={4} style={{ margin: 0 }}><TeamOutlined style={{ marginRight: 8 }} />用户管理</Title>
         <Space>
           <Button icon={<DownloadOutlined />} onClick={handleExportAll}>导出全部</Button>
+          <Button icon={<ImportOutlined />} onClick={handleImportUsers}>导入用户</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>添加用户</Button>
         </Space>
       </div>

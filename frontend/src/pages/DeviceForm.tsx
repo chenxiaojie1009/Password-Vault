@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Card, Form, Input, Select, Button, Space, Divider, message, Popconfirm, Typography } from "antd";
+import { Card, Form, Input, Select, Button, Space, Divider, message, Popconfirm, Typography, Switch } from "antd";
 import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
 const { Title } = Typography;
-const DEFAULT_TYPES = ["服务器", "交换机", "纵加设备", "路由器", "防火墙", "存储设备", "其他"];
+const DEFAULT_TYPES = ["服务器", "交换机", "纵加设备", "路由器", "防火墙", "存储设备", "工作站", "其他"];
 
 export default function DeviceForm() {
   const { id } = useParams();
@@ -32,6 +32,7 @@ export default function DeviceForm() {
           form.setFieldsValue({
             name: d.name, device_type: d.device_type,
             location: d.location, notes: d.notes,
+            is_network_involved: d.is_network_involved,
             ips: (d.ips || []).map((ip: any) => ({ address: ip.address, label: ip.label, _id: ip.id })),
             macs: (d.macs || []).map((m: any) => ({ address: m.address, label: m.label, _id: m.id })),
             accounts: (d.accounts || []).map((a: any) => ({
@@ -50,6 +51,7 @@ export default function DeviceForm() {
       const payload = {
         name: values.name, device_type: values.device_type,
         location: values.location, notes: values.notes,
+        is_network_involved: values.is_network_involved || false,
         ips: (values.ips || []).map((x: any) => ({ address: x.address, label: x.label || "" })),
         macs: (values.macs || []).map((x: any) => ({ address: x.address, label: x.label || "" })),
         accounts: (values.accounts || []).map((a: any) => ({
@@ -119,6 +121,7 @@ export default function DeviceForm() {
                 onSearch={(val) => {
                   if (val && !deviceTypes.includes(val)) {
                     setDeviceTypes(prev => [...prev, val]);
+                    api.post("/config/device_types", { value: val }).catch(() => {});
                   }
                 }}
                 placeholder="选择或输入新类型"
@@ -127,6 +130,9 @@ export default function DeviceForm() {
           </Space>
           <Form.Item name="location" label="位置">
             <Input placeholder="如：机房A" style={{ width: 300 }} />
+          </Form.Item>
+          <Form.Item name="is_network_involved" label="涉网设备" valuePropName="checked">
+            <Switch checkedChildren="是" unCheckedChildren="否" />
           </Form.Item>
 
           <Title level={5}>IP 地址</Title>

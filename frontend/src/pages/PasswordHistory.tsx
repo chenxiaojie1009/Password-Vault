@@ -10,7 +10,7 @@ const { RangePicker } = DatePicker;
 interface HistoryRecord {
   id: number; account_id: number; changed_by: number;
   changed_by_name: string; changed_at: string; reason: string;
-  account_name: string; device_name: string;
+  old_password: string; account_name: string; device_name: string;
 }
 
 export default function PasswordHistory() {
@@ -40,6 +40,7 @@ export default function PasswordHistory() {
     { title: "时间", dataIndex: "changed_at", width: 170, render: (v: string) => dayjs(v).format("YYYY-MM-DD HH:mm:ss") },
     { title: "设备", dataIndex: "device_name", width: 150, ellipsis: true },
     { title: "账号", dataIndex: "account_name", width: 120 },
+    { title: "旧密码", dataIndex: "old_password", width: 150, ellipsis: true },
     { title: "操作人", dataIndex: "changed_by_name", width: 100, render: (v: string) => <Space><UserOutlined />{v}</Space> },
     { title: "原因", dataIndex: "reason", ellipsis: true },
     { title: "操作", key: "action", width: 90, render: () => <Tag color="blue">已变更</Tag> },

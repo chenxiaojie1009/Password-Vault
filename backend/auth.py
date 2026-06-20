@@ -84,7 +84,15 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-def require_editor(current_user: User = Depends(get_current_user)) -> User:
+def require_write(current_user: User = Depends(get_current_user)) -> User:
+    """Admin and editor can write devices (but editor cannot write network-involved)."""
     if current_user.role not in ("admin", "editor"):
         raise HTTPException(status_code=403, detail="需要编辑权限")
+    return current_user
+
+
+def require_operator(current_user: User = Depends(get_current_user)) -> User:
+    """Admin and operator can view network-involved devices."""
+    if current_user.role not in ("admin", "operator"):
+        raise HTTPException(status_code=403, detail="需要运维权限")
     return current_user

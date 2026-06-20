@@ -60,7 +60,7 @@ export default function Login() {
           styles={{ body: { padding: "36px 32px" } }}>
           <div style={{ textAlign: "center", marginBottom: 32 }}>
             <SafetyOutlined style={{ fontSize: 48, color: "#1677ff" }} />
-            <Title level={3} style={{ marginTop: 12, marginBottom: 4 }}>密码管理器</Title>
+            <Title level={3} style={{ marginTop: 12, marginBottom: 4 }}>设备管理器</Title>
             <Text type="secondary">内网设备账号管理平台</Text>
           </div>
           <Form name="login" form={form} onFinish={doLogin} size="large">

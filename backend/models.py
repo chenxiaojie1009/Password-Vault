@@ -5,7 +5,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from database import Base
-import enum
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -13,22 +12,6 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 def beijing_now():
     """Return current datetime in Beijing time (UTC+8)."""
     return datetime.now(BEIJING_TZ).replace(tzinfo=None)
-
-
-class UserRole(str, enum.Enum):
-    ADMIN = "admin"
-    EDITOR = "editor"
-    VIEWER = "viewer"
-
-
-class DeviceType(str, enum.Enum):
-    SERVER = "服务器"
-    SWITCH = "交换机"
-    ZONGJIA = "纵加设备"
-    ROUTER = "路由器"
-    FIREWALL = "防火墙"
-    STORAGE = "存储设备"
-    OTHER = "其他"
 
 
 class User(Base):
@@ -53,6 +36,7 @@ class Device(Base):
     device_type = Column(String(64), default="其他", nullable=False)
     location = Column(String(256), default="")
     notes = Column(Text, default="")
+    is_network_involved = Column(Boolean, default=False)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=beijing_now)
     updated_at = Column(DateTime, default=beijing_now, onupdate=beijing_now)
@@ -97,6 +81,7 @@ class PasswordHistory(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     account_id = Column(Integer, ForeignKey("device_accounts.id", ondelete="CASCADE"), nullable=False)
     old_password_hash = Column(String(512), nullable=False)
+    old_password = Column(String(512), default="")
     changed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     changed_at = Column(DateTime, default=beijing_now, nullable=False)
     reason = Column(String(512), default="")

@@ -20,7 +20,7 @@ export default function AppLayout() {
   }, [navigate]);
 
   const menuItems = [
-    { key: '/', icon: <DashboardOutlined />, label: '密码列表' },
+    { key: '/', icon: <DashboardOutlined />, label: '设备列表' },
     { key: '/history', icon: <HistoryOutlined />, label: '密码历史' },
     { key: '/audit', icon: <AuditOutlined />, label: '审计日志' },
     ...(user.role === 'admin' ? [{ key: '/users', icon: <TeamOutlined />, label: '用户管理' }] : []),
@@ -65,7 +65,7 @@ export default function AppLayout() {
         style={{ background: 'linear-gradient(180deg, #001529 0%, #002140 100%)' }}>
         <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
           <SettingOutlined style={{ fontSize: collapsed ? 20 : 24, color: '#1890ff' }} />
-          {!collapsed && <span style={{ color: '#fff', marginLeft: 10, fontSize: 16, fontWeight: 600, whiteSpace: 'nowrap' }}>密码管理器</span>}
+          {!collapsed && <span style={{ color: '#fff', marginLeft: 10, fontSize: 16, fontWeight: 600, whiteSpace: 'nowrap' }}>设备管理器</span>}
         </div>
         <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} items={menuItems} onClick={({ key }) => navigate(key)} />
       </Sider>
