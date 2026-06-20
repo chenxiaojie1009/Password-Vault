@@ -32,6 +32,7 @@ class User(Base):
     display_name = Column(String(128), default="")
     role = Column(SAEnum(UserRole), default=UserRole.VIEWER, nullable=False)
     is_active = Column(Boolean, default=True)
+    must_change_password = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     audit_logs = relationship("AuditLog", back_populates="user")
     password_changes = relationship("PasswordHistory", back_populates="changed_by_user")

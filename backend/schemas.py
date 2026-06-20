@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class LoginRequest(BaseModel): username: str; password: str
-class TokenResponse(BaseModel): access_token: str; token_type: str = "bearer"; username: str; display_name: str; role: str
+class TokenResponse(BaseModel): access_token: str; token_type: str = "bearer"; username: str; display_name: str; role: str; must_change_password: bool = False
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=2, max_length=64)
@@ -13,10 +13,11 @@ class UserCreate(BaseModel):
     display_name: str = ""; role: str = "viewer"
 
 class UserResponse(BaseModel):
-    id: int; username: str; display_name: str; role: str; is_active: bool; created_at: datetime
+    id: int; username: str; display_name: str; role: str; is_active: bool; must_change_password: bool = False; created_at: datetime
     model_config = {"from_attributes": True}
 
 class PasswordStrengthResult(BaseModel): score: int; level: str; feedback: str
+class ChangePasswordRequest(BaseModel): old_password: str; new_password: str = Field(min_length=6)
 
 class IPCreate(BaseModel): address: str = Field(min_length=1, max_length=64); label: str = ""
 class MACCreate(BaseModel): address: str = Field(min_length=1, max_length=32); label: str = ""

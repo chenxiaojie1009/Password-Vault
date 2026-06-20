@@ -30,7 +30,7 @@ from schemas import (
     DeviceAccountCreate, DeviceAccountResponse,
     IPCreate, IPResponse, MACCreate, MACResponse,
     PasswordHistoryResponse, AuditLogResponse,
-    PasswordStrengthResult, BatchImportResult, BackupInfo, ExportRequest,
+    PasswordStrengthResult, BatchImportResult, BackupInfo, ExportRequest, ChangePasswordRequest,
 )
 from auth import (
     hash_password, verify_password, encrypt_password, decrypt_password,
@@ -49,7 +49,8 @@ os.makedirs(BACKUP_DIR, exist_ok=True)
 def init_admin(db: Session):
     if not db.query(User).filter(User.username == "admin").first():
         db.add(User(username="admin", password_hash=hash_password("admin123"),
-                    display_name="Administrator", role=UserRole.ADMIN))
+                    display_name="Administrator", role=UserRole.ADMIN,
+                    must_change_password=True))
         db.commit()
 
 
@@ -98,10 +99,22 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     token = create_access_token(data={"sub": user.id})
     write_audit(db, user.id, "login", "system", detail=f"用户 {user.username} 登录")
     return TokenResponse(access_token=token, username=user.username,
-                         display_name=user.display_name or user.username, role=user.role.value)
+                         display_name=user.display_name or user.username, role=user.role.value,
+                         must_change_password=user.must_change_password)
 
 @app.get("/api/auth/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)): return current_user
+
+@app.post("/api/auth/change-password")
+def change_my_password(body: ChangePasswordRequest, db: Session = Depends(get_db),
+                       current_user: User = Depends(get_current_user)):
+    if not verify_password(body.old_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="原密码错误")
+    current_user.password_hash = hash_password(body.new_password)
+    current_user.must_change_password = False
+    db.commit()
+    write_audit(db, current_user.id, "change_password", "user", current_user.id, "修改密码")
+    return {"ok": True}
 
 
 # ---- Users ----
