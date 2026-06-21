@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Table, Card, Input, Select, Typography, Space, Tag, DatePicker } from "antd";
+import { Table, Card, Input, Select, Typography, Space, Tag, DatePicker, Grid } from "antd";
+const { useBreakpoint } = Grid;
 import { AuditOutlined, SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import api from "../api/client";
@@ -18,6 +19,8 @@ export default function AuditLog() {
   const [userFilter, setUserFilter] = useState("");
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [page, setPage] = useState(1);
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -43,19 +46,19 @@ export default function AuditLog() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
         <Title level={4} style={{ margin: 0 }}><AuditOutlined style={{ marginRight: 8 }} />操作日志审计</Title>
-        <Space>
+        <Space wrap>
           <Input placeholder="搜索用户" prefix={<SearchOutlined />} value={userFilter}
-            onChange={(e) => setUserFilter(e.target.value)} onPressEnter={fetchLogs} style={{ width: 160 }} />
-          <Select placeholder="操作类型" allowClear style={{ width: 120 }} value={actionFilter} onChange={setActionFilter}
+            onChange={(e) => setUserFilter(e.target.value)} onPressEnter={fetchLogs} style={{ width: isMobile ? 120 : 160 }} />
+          <Select placeholder="操作类型" allowClear style={{ width: isMobile ? 100 : 120 }} value={actionFilter} onChange={setActionFilter}
             options={Object.entries(actionLabels).map(([k, v]) => ({ label: v, value: k }))} />
           <RangePicker value={dateRange} onChange={(vals) => setDateRange(vals as [dayjs.Dayjs, dayjs.Dayjs] | null)}
-            placeholder={["开始日期", "结束日期"]} />
+            placeholder={["开始", "结束"]} style={{ width: isMobile ? 180 : undefined }} />
         </Space>
       </div>
       <Card>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading}
+        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} scroll={{ x: 700 }}
           pagination={{ current: page, pageSize: 15, showTotal: (t: number) => `共 ${t} 条`, onChange: (p) => setPage(p) }}
           locale={{ emptyText: "暂无操作日志" }} />
       </Card>

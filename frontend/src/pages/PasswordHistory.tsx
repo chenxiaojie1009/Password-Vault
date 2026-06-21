@@ -48,13 +48,13 @@ export default function PasswordHistory() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
         <Title level={4} style={{ margin: 0 }}><HistoryOutlined style={{ marginRight: 8 }} />密码修改历史</Title>
-        <Space>
-          <Select placeholder="筛选设备" allowClear style={{ width: 200 }} value={deviceId} onChange={setDeviceId}
+        <Space wrap>
+          <Select placeholder="筛选设备" allowClear style={{ width: 160 }} value={deviceId} onChange={setDeviceId}
             options={devices.map((d) => ({ label: d.name, value: d.id }))} />
           <RangePicker value={dateRange} onChange={(vals) => setDateRange(vals as [dayjs.Dayjs, dayjs.Dayjs] | null)}
-            placeholder={["开始日期", "结束日期"]} />
+            placeholder={["开始", "结束"]} />
         </Space>
       </div>
       <Card>
