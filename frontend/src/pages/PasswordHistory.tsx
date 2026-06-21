@@ -21,7 +21,7 @@ export default function PasswordHistory() {
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 
   const fetchDevices = async () => {
-    try { const res = await api.get("/devices"); setDevices(res.data || []); } catch {}
+    try { const res = await api.get("/devices"); setDevices(res.data.items || []); } catch {}
   };
   const fetchHistory = async () => {
     setLoading(true);
