@@ -32,7 +32,7 @@ export default function DeviceForm() {
           form.setFieldsValue({
             name: d.name, device_type: d.device_type,
             location: d.location, notes: d.notes,
-            is_network_involved: d.is_network_involved,
+            is_network_involved: d.is_network_involved, device_level: d.device_level,
             ips: (d.ips || []).map((ip: any) => ({ address: ip.address, label: ip.label, _id: ip.id })),
             macs: (d.macs || []).map((m: any) => ({ address: m.address, label: m.label, _id: m.id })),
             accounts: (d.accounts || []).map((a: any) => ({
@@ -51,7 +51,7 @@ export default function DeviceForm() {
       const payload = {
         name: values.name, device_type: values.device_type,
         location: values.location, notes: values.notes,
-        is_network_involved: values.is_network_involved || false,
+        is_network_involved: values.is_network_involved || false, device_level: values.device_level || "一级设备",
         ips: (values.ips || []).map((x: any) => ({ address: x.address, label: x.label || "" })),
         macs: (values.macs || []).map((x: any) => ({ address: x.address, label: x.label || "" })),
         accounts: (values.accounts || []).map((a: any) => ({
@@ -133,6 +133,9 @@ export default function DeviceForm() {
           </Form.Item>
           <Form.Item name="is_network_involved" label="涉网设备" valuePropName="checked">
             <Switch checkedChildren="是" unCheckedChildren="否" />
+          </Form.Item>
+          <Form.Item name="device_level" label="设备分级" initialValue="一级设备" rules={[{ required: true }]}>
+            <Select options={["一级设备","二级设备","三级设备","四级设备"].map(t=>({label:t,value:t}))} style={{ width: 140 }} />
           </Form.Item>
 
           <Title level={5}>IP 地址</Title>

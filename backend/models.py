@@ -37,6 +37,7 @@ class Device(Base):
     location = Column(String(256), default="")
     notes = Column(Text, default="")
     is_network_involved = Column(Boolean, default=False)
+    device_level = Column(String(32), default="一级设备", nullable=False)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=beijing_now)
     updated_at = Column(DateTime, default=beijing_now, onupdate=beijing_now)

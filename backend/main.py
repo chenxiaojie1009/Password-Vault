@@ -39,6 +39,9 @@ from schemas import (
     PasswordStrengthResult, BatchImportResult, BackupInfo, ExportRequest, ChangePasswordRequest,
     UserUpdate,
 )
+# Role-level mapping: max device level each role can access
+def role_max_level(role: str) -> int:
+    return {"admin": 4, "operator": 3, "editor": 2, "viewer": 1}.get(role, 1)
 from auth import (
     hash_password, verify_password, encrypt_password, decrypt_password,
     create_access_token, get_current_user, require_admin, require_write, require_operator,
@@ -315,7 +318,7 @@ def list_devices(keyword: str = Query(""), device_type: str = Query(""),
         device_type=d.device_type,
         ip_address=_first_ip(d), mac_address=_first_mac(d),
         account_count=db.query(func.count(DeviceAccount.id)).filter(DeviceAccount.device_id == d.id).scalar() or 0,
-        is_network_involved=d.is_network_involved,
+        is_network_involved=d.is_network_involved, device_level=d.device_level,
         updated_at=d.updated_at,
     ) for d in devices], "total": total}
 
@@ -329,7 +332,7 @@ def get_device(device_id: int, db: Session = Depends(get_db), current_user: User
     return DeviceResponse(
         id=d.id, name=d.name,
         device_type=d.device_type,
-        location=d.location, notes=d.notes, is_network_involved=d.is_network_involved,
+        location=d.location, notes=d.notes, is_network_involved=d.is_network_involved, device_level=d.device_level,
         created_at=d.created_at, updated_at=d.updated_at,
         ips=[IPResponse(id=ip.id, address=ip.address, label=ip.label) for ip in d.ips],
         macs=[MACResponse(id=m.id, address=m.address, label=m.label) for m in d.macs],
@@ -341,7 +344,7 @@ def get_device(device_id: int, db: Session = Depends(get_db), current_user: User
 def create_device(body: DeviceCreate, request: Request, db: Session = Depends(get_db),
                   current_user: User = Depends(require_write)):
     d = Device(name=body.name, device_type=body.device_type or "其他",
-               location=body.location, notes=body.notes, created_by=current_user.id,
+               location=body.location, notes=body.notes, created_by=current_user.id, device_level=body.device_level or "一级设备",
                is_network_involved=body.is_network_involved)
     db.add(d); db.flush()
     for ip in (body.ips or []): db.add(DeviceIP(device_id=d.id, address=ip.address, label=ip.label))
@@ -370,6 +373,8 @@ def update_device(device_id: int, body: DeviceUpdate, request: Request,
     if body.location is not None: d.location = body.location
     if body.notes is not None: d.notes = body.notes
     if body.is_network_involved is not None: d.is_network_involved = body.is_network_involved
+    if body.device_level is not None: d.device_level = body.device_level
+    
     _sync_ips_macs(d, body.ips, body.macs, db)
     d.updated_at = beijing_now()
     db.commit(); db.refresh(d)
@@ -488,7 +493,7 @@ def list_all_password_history(device_id: int = Query(None), start_date: str = Qu
 def list_audit_logs(action: str = Query(""), user_id: int = Query(None),
                     start_date: str = Query(""), end_date: str = Query(""),
                     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
-                    db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+                    db: Session = Depends(get_db), _: User = Depends(require_admin)):
     q = db.query(AuditLog)
     if action: q = q.filter(AuditLog.action == action)
     if user_id: q = q.filter(AuditLog.user_id == user_id)
@@ -519,7 +524,7 @@ def export_devices(body: ExportRequest, request: Request, db: Session = Depends(
         hfill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         ha = Alignment(horizontal="center", vertical="center")
         tb = Border(left=Side(style="thin"), right=Side(style="thin"), top=Side(style="thin"), bottom=Side(style="thin"))
-        headers = ["名称", "类型", "IP", "MAC", "位置", "涉网", "账号", "密码", "备注", "更新时间"]
+        headers = ["名称", "类型", "IP", "MAC", "位置", "涉网", "分级", "账号", "密码", "备注", "更新时间"]
         for col, h in enumerate(headers, 1):
             c = ws.cell(row=1, column=col, value=h); c.font = hf; c.fill = hfill; c.alignment = ha; c.border = tb
         row = 2
@@ -530,16 +535,16 @@ def export_devices(body: ExportRequest, request: Request, db: Session = Depends(
             ips_str = ", ".join(ip.address for ip in dev.ips)
             macs_str = ", ".join(m.address for m in dev.macs)
             if not accounts:
-                for col, val in enumerate([dev.name, dt, ips_str, macs_str, dev.location, "是" if dev.is_network_involved else "否", "", "", dev.notes, ts], 1):
+                for col, val in enumerate([dev.name, dt, ips_str, macs_str, dev.location, "是" if dev.is_network_involved else "否", dev.device_level, "", "", dev.notes, ts], 1):
                     ws.cell(row=row, column=col, value=val).border = tb
                 row += 1
             else:
                 for ac in accounts:
                     pwd = decrypt_password(ac.password_encrypted)
-                    for col, val in enumerate([dev.name, dt, ips_str, macs_str, dev.location, "是" if dev.is_network_involved else "否", ac.username, pwd, ac.notes or dev.notes, ts], 1):
+                    for col, val in enumerate([dev.name, dt, ips_str, macs_str, dev.location, "是" if dev.is_network_involved else "否", dev.device_level, ac.username, pwd, ac.notes or dev.notes, ts], 1):
                         ws.cell(row=row, column=col, value=val).border = tb
                     row += 1
-        for i, w in enumerate([20, 12, 22, 22, 16, 6, 14, 18, 30, 18], 1):
+        for i, w in enumerate([20, 12, 22, 22, 16, 6, 8, 14, 18, 30, 18], 1):
             ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
         output = io.BytesIO(); wb.save(output); output.seek(0)
         write_audit(db, current_user.id, "export", "device", detail=f"导出 {len(devices)} 个设备")
@@ -563,7 +568,7 @@ def export_all(db: Session = Depends(get_db), current_user: User = Depends(requi
 
         # Sheet 1: 密码列表
         ws1 = wb.active; ws1.title = "密码列表"
-        headers1 = ["名称", "类型", "IP", "MAC", "位置", "涉网", "账号", "密码", "备注", "更新时间"]
+        headers1 = ["名称", "类型", "IP", "MAC", "位置", "涉网", "分级", "账号", "密码", "备注", "更新时间"]
         for col, h in enumerate(headers1, 1):
             c = ws1.cell(row=1, column=col, value=h); c.font = hf; c.fill = hfill; c.alignment = ha; c.border = tb
         row = 2
@@ -583,7 +588,7 @@ def export_all(db: Session = Depends(get_db), current_user: User = Depends(requi
                     for col, val in enumerate([dev.name, dev.device_type, ips_str, macs_str, dev.location, ac.username, pwd, ac.notes or dev.notes, ts], 1):
                         ws1.cell(row=row, column=col, value=val).border = tb
                     row += 1
-        for i, w in enumerate([20, 12, 22, 22, 16, 6, 14, 18, 30, 18], 1):
+        for i, w in enumerate([20, 12, 22, 22, 16, 6, 8, 14, 18, 30, 18], 1):
             ws1.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 
         # Sheet 2: 用户列表
@@ -630,14 +635,15 @@ async def import_devices_xlsx(request: Request, file: UploadFile = File(...),
                 macs_raw = vals[3] if len(vals) > 3 else ""
                 loc = vals[4] if len(vals) > 4 else ""
                 is_net = vals[5] if len(vals) > 5 else "否"
-                uname = vals[6] if len(vals) > 6 else ""
-                pwd = vals[7] if len(vals) > 7 else ""
-                notes = vals[8] if len(vals) > 8 else ""
+                dev_lv = vals[6] if len(vals) > 6 else "一级设备"
+                uname = vals[7] if len(vals) > 7 else ""
+                pwd = vals[8] if len(vals) > 8 else ""
+                notes = vals[9] if len(vals) > 9 else ""
                 if not name: result.failed += 1; result.errors.append(f"第{i}行：名称为空"); continue
                 dev = db.query(Device).filter(Device.name == name).first()
                 if not dev:
                     dev = Device(name=name, device_type=dtype or "其他", location=loc, notes=notes,
-                                 is_network_involved=(is_net in ("是", "true", "True", "1", "yes")))
+                                 is_network_involved=(is_net in ("是", "true", "True", "1", "yes")), device_level=dev_lv or "一级设备")
                     db.add(dev); db.flush()
                 for ip_addr in [x.strip() for x in ips_raw.split(",") if x.strip()]:
                     if not db.query(DeviceIP).filter(DeviceIP.device_id == dev.id, DeviceIP.address == ip_addr).first():
@@ -664,9 +670,9 @@ def download_import_template():
     try: import openpyxl
     except ImportError: raise HTTPException(status_code=500, detail="openpyxl 未安装")
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "导入模板"
-    headers = ["名称*", "类型", "IP(逗号分隔)", "MAC(逗号分隔)", "位置", "涉网(是/否)", "账号", "密码", "备注"]
+    headers = ["名称*", "类型", "IP(逗号分隔)", "MAC(逗号分隔)", "位置", "涉网(是/否)", "分级", "账号", "密码", "备注"]
     for col, h in enumerate(headers, 1): ws.cell(row=1, column=col, value=h)
-    example = ["核心交换机-01", "交换机", "192.168.1.1,10.0.0.1", "AA:BB:CC:DD:EE:FF", "机房A", "否", "admin", "password123", "核心设备"]
+    example = ["核心交换机-01", "交换机", "192.168.1.1,10.0.0.1", "AA:BB:CC:DD:EE:FF", "机房A", "否", "一级设备", "admin", "password123", "核心设备"]
     for col, val in enumerate(example, 1): ws.cell(row=2, column=col, value=val)
     output = io.BytesIO(); wb.save(output); output.seek(0)
     return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

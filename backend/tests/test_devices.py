@@ -51,19 +51,19 @@ class TestDeviceCRUD:
             "macs": [], "accounts": []
         }, headers=admin_token)
         resp = client.get("/api/devices", headers=admin_token)
-        assert len(resp.json()) == 2
+        assert len(resp.json()["items"]) == 2
 
     def test_list_devices_search(self, client, admin_token):
         client.post("/api/devices", json=DEVICE_PAYLOAD, headers=admin_token)
         client.post("/api/devices", json={"name": "XYZ", "device_type": "其他", "ips": [], "macs": [], "accounts": []}, headers=admin_token)
         resp = client.get("/api/devices?keyword=Core", headers=admin_token)
-        assert len(resp.json()) == 1
+        assert len(resp.json()["items"]) == 1
 
     def test_list_devices_type_filter(self, client, admin_token):
         client.post("/api/devices", json=DEVICE_PAYLOAD, headers=admin_token)
         client.post("/api/devices", json={"name": "Srv", "device_type": "服务器", "ips": [], "macs": [], "accounts": []}, headers=admin_token)
         resp = client.get("/api/devices?device_type=交换机", headers=admin_token)
-        assert len(resp.json()) == 1
+        assert len(resp.json()["items"]) == 1
 
     def test_update_device(self, client, admin_token):
         created = client.post("/api/devices", json=DEVICE_PAYLOAD, headers=admin_token).json()

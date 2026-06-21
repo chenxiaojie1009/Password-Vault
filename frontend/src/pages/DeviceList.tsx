@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import DeviceModal from "../components/DeviceModal";
 
-interface Device { id: number; name: string; device_type: string; ip_address: string; mac_address: string; account_count: number; is_network_involved: boolean; updated_at: string; }
+interface Device { id: number; name: string; device_type: string; ip_address: string; mac_address: string; account_count: number; is_network_involved: boolean; device_level: string; updated_at: string; }
 
 const typeColors: Record<string, string> = { "服务器": "blue", "交换机": "green", "纵加设备": "orange", "路由器": "purple", "防火墙": "red", "存储设备": "cyan", "工作站": "geekblue", "其他": "default" };
 
@@ -96,6 +96,10 @@ export default function DeviceList() {
     { title: "MAC 地址", dataIndex: "mac_address", width: 160 },
     { title: "账号数", dataIndex: "account_count", width: 80, align: "center" as const },
     { title: "涉网", dataIndex: "is_network_involved", width: 60, align: "center" as const, render: (v: boolean) => v ? <Tag color="red">是</Tag> : <Tag>否</Tag> },
+    { title: "分级", dataIndex: "device_level", width: 80, render: (v: string) => {
+      const lc: Record<string,string>={"一级设备":"blue","二级设备":"green","三级设备":"orange","四级设备":"red"};
+      return <Tag color={lc[v]||"default"}>{v}</Tag>;
+    }},
     { title: "更新时间", dataIndex: "updated_at", width: 170, render: (t: string) => new Date(t).toLocaleString("zh-CN") },
     {
       title: "操作", width: 160,

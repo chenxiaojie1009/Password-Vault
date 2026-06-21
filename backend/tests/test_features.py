@@ -64,7 +64,8 @@ class TestBackup:
         resp = client.get("/api/backups", headers=admin_token)
         assert len(resp.json()) >= 1
         devs = client.get("/api/devices", headers=admin_token).json()
-        client.delete(f"/api/devices/{devs[0]['id']}", headers=admin_token)
+        first_id = devs["items"][0]["id"]
+        client.delete("/api/devices/" + str(first_id), headers=admin_token)
         client.post("/api/backups", headers=admin_token)
         resp2 = client.get("/api/backups", headers=admin_token)
         assert len(resp2.json()) >= 2

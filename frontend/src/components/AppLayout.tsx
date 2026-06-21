@@ -25,8 +25,11 @@ export default function AppLayout() {
   const menuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '设备列表' },
     { key: '/history', icon: <HistoryOutlined />, label: '密码历史' },
-    { key: '/audit', icon: <AuditOutlined />, label: '审计日志' },
-    ...(user.role === 'admin' ? [{ key: '/users', icon: <TeamOutlined />, label: '用户管理' }, { key: '/backup', icon: <CloudServerOutlined />, label: '备份与还原' }] : []),
+    ...(user.role === 'admin' ? [
+      { key: '/audit', icon: <AuditOutlined />, label: '审计日志' },
+      { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
+      { key: '/backup', icon: <CloudServerOutlined />, label: '备份与还原' }
+    ] : []),
   ];
 
   const handleLogout = () => {

@@ -116,7 +116,7 @@ class TestPermissionLevels:
         # Read as viewer
         resp = client.get("/api/devices", headers=viewer_token)
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
+        assert len(resp.json()["items"]) == 1
 
 
 class TestUserManagement:
