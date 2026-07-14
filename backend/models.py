@@ -117,3 +117,15 @@ class DeviceVisibility(Base):
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
     user = relationship("User", back_populates="visible_devices")
     device = relationship("Device")
+
+
+class DeviceFile(Base):
+    __tablename__ = "device_files"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
+    filename = Column(String(512), nullable=False)
+    original_name = Column(String(512), nullable=False)
+    file_size = Column(Integer, default=0)
+    file_type = Column(String(32), default="")
+    created_at = Column(DateTime, default=beijing_now)
+    device = relationship("Device")

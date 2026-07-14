@@ -9,6 +9,7 @@ import PasswordHistory from './pages/PasswordHistory';
 import AuditLog from './pages/AuditLog';
 import UserManagement from './pages/UserManagement';
 import BackupRestore from './pages/BackupRestore';
+import UpgradeRestore from './pages/UpgradeRestore';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
             <Route path="/audit" element={<AuditLog />} />
             <Route path="/users" element={<UserManagement />} />
             <Route path="/backup" element={<BackupRestore />} />
+            <Route path="/upgrade" element={<UpgradeRestore />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

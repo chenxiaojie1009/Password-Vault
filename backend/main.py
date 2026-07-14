@@ -54,6 +54,8 @@ Base.metadata.create_all(bind=engine)
 scheduler = BackgroundScheduler()
 BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 os.makedirs(BACKUP_DIR, exist_ok=True)
+UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def init_admin(db: Session):
