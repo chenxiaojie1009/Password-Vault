@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Card, Form, Input, Select, Button, Space, Divider, message, Popconfirm, Typography, Switch } from "antd";
-import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Card, Form, Input, Select, Button, Space, Divider, message, Popconfirm, Typography, Switch, Upload } from "antd";
+import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, UploadOutlined, DownloadOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
 const { Title } = Typography;
@@ -14,6 +14,7 @@ export default function DeviceForm() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deviceTypes, setDeviceTypes] = useState<string[]>(DEFAULT_TYPES);
+  const [files, setFiles] = useState<{id:number;filename:string;file_size:number;file_type:string;created_at:string}[]>([]);
   const isEdit = !!id;
 
   useEffect(() => {
@@ -42,8 +43,24 @@ export default function DeviceForm() {
         })
         .catch(() => message.error("加载设备失败"))
         .finally(() => setLoading(false));
+      // Fetch files
+      api.get("/devices/" + id + "/files").then(r => setFiles(r.data||[])).catch(()=>{});
     }
   }, [id, form]);
+
+  const handleUpload = async (file: File) => {
+    const fd = new FormData(); fd.append("file", file);
+    await api.post("/devices/" + id + "/files", fd);
+    message.success("上传成功");
+    const r = await api.get("/devices/" + id + "/files");
+    setFiles(r.data || []);
+    return false;
+  };
+
+  const handleDeleteFile = async (fileId: number) => {
+    await api.delete("/files/" + fileId);
+    setFiles(files.filter(f => f.id !== fileId));
+  };
 
   const onFinish = async (values: any) => {
     setSaving(true);
@@ -217,6 +234,29 @@ export default function DeviceForm() {
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={2} placeholder="补充说明" />
           </Form.Item>
+
+          {isEdit && (
+            <div style={{ marginBottom: 16 }}>
+              <Title level={5}>附件</Title>
+              <Upload beforeUpload={handleUpload as any} showUploadList={false} accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.bmp">
+                <Button icon={<UploadOutlined />}>上传文件 (PDF/Word/Excel/图片)</Button>
+              </Upload>
+              {files.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  {files.map(f => (
+                    <Space key={f.id} style={{ marginRight: 8, marginBottom: 4 }}>
+                      <a href={"/api/files/" + f.id} target="_blank" download={f.filename}>{f.filename}</a>
+                      <span style={{ color: "#999", fontSize: 12 }}>{(f.file_size/1024).toFixed(1)}KB</span>
+                      <Popconfirm title="删除此附件?" onConfirm={() => handleDeleteFile(f.id)}>
+                        <Button size="small" danger icon={<DeleteOutlined />} />
+                      </Popconfirm>
+                    </Space>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <Space>
             <Button type="primary" htmlType="submit" loading={saving}>{isEdit ? "Save" : "Create"}</Button>
             <Button onClick={() => navigate("/")}>取消</Button>
