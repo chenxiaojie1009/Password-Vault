@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Table, Button, Input, Select, Space, Tag, Card, Popconfirm, message, Tooltip, Grid, Pagination } from "antd";
 const { useBreakpoint } = Grid;
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, ReloadOutlined, EyeOutlined, DownloadOutlined } from "@ant-design/icons";
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, ReloadOutlined, EyeOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client";
@@ -10,6 +10,12 @@ import DeviceModal from "../components/DeviceModal";
 interface Device { id: number; name: string; device_type: string; ip_address: string; mac_address: string; account_count: number; is_network_involved: boolean; device_level: string; updated_at: string; }
 
 const typeColors: Record<string, string> = { "服务器": "blue", "交换机": "green", "纵加设备": "orange", "路由器": "purple", "防火墙": "red", "存储设备": "cyan", "工作站": "geekblue", "其他": "default" };
+const ROLE_MAX_LEVEL: Record<string, number> = { admin: 4, operator: 3, editor: 2, viewer: 1 };
+const LEVEL_NUM: Record<string, number> = { "一级设备": 1, "二级设备": 2, "三级设备": 3, "四级设备": 4 };
+
+function canEditDevice(role: string, deviceLevel: string): boolean {
+  return (LEVEL_NUM[deviceLevel] || 1) <= (ROLE_MAX_LEVEL[role] || 1);
+}
 
 export default function DeviceList() {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -28,7 +34,6 @@ export default function DeviceList() {
   const canEdit = user.role === "admin" || user.role === "editor";
   const screens = useBreakpoint();
   const isMobile = !screens.md;
-
   useEffect(() => {
     api.get("/config/device_types").then(r => {
       const vals = r.data?.map((i: any) => i.value) || [];
@@ -64,17 +69,6 @@ export default function DeviceList() {
     } catch { message.error("导出失败"); }
   };
 
-  const handleExportAll = async () => {
-    try {
-      const res = await api.post("/export/all", {}, { responseType: "blob" });
-      const url = URL.createObjectURL(new Blob([res.data]));
-      const a = document.createElement("a"); a.href = url;
-      a.download = "全部数据_" + new Date().toISOString().slice(0, 10) + ".xlsx";
-      a.click(); URL.revokeObjectURL(url);
-      message.success("导出成功（含密码列表+用户列表）");
-    } catch { message.error("导出失败"); }
-  };
-
   const handleImport = () => {
     const input = document.createElement("input"); input.type = "file"; input.accept = ".xlsx,.xls";
     input.onchange = async (e: any) => {
@@ -107,7 +101,7 @@ export default function DeviceList() {
         <Space>
           <Tooltip title="查看"><Button type="link" size="small" icon={<EyeOutlined />}
             onClick={() => { setDetailId(record.id); setModalOpen(true); }} /></Tooltip>
-          {canEdit && (<>
+          {canEditDevice(user.role, record.device_level) && (<>
             <Tooltip title="编辑"><Button type="link" size="small" icon={<EditOutlined />}
               onClick={() => navigate("/devices/" + record.id + "/edit")} /></Tooltip>
             <Popconfirm title="确定删除？" onConfirm={() => handleDelete(record.id)}>
@@ -132,10 +126,8 @@ export default function DeviceList() {
             <Button icon={<ReloadOutlined />} onClick={fetchDevices}>刷新</Button>
           </Space>
           <Space>
-            {canEdit && (<>
-              <Button icon={<ImportOutlined />} onClick={handleImport}>批量导入</Button>
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/devices/new")}>添加设备</Button>
-            </>)}
+            {canEdit && <Button icon={<ImportOutlined />} onClick={handleImport}>批量导入</Button>}
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/devices/new")}>添加设备</Button>
             <Button icon={<ExportOutlined />} onClick={handleExport}>导出</Button>
           </Space>
         </Space>
@@ -160,8 +152,8 @@ export default function DeviceList() {
                 </div>
                 <Space size={4}>
                   <Button size="small" onClick={() => { setDetailId(d.id); setModalOpen(true); }}>查看</Button>
-                  {canEdit && <Button size="small" onClick={() => navigate("/devices/" + d.id + "/edit")}>编辑</Button>}
-                  {canEdit && <Popconfirm title="确定删除？" onConfirm={() => handleDelete(d.id)}>
+                  {canEditDevice(user.role, d.device_level) && <Button size="small" onClick={() => navigate("/devices/" + d.id + "/edit")}>编辑</Button>}
+                  {canEditDevice(user.role, d.device_level) && <Popconfirm title="确定删除？" onConfirm={() => handleDelete(d.id)}>
                     <Button size="small" danger>删除</Button>
                   </Popconfirm>}
                 </Space>

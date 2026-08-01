@@ -88,10 +88,46 @@ class TestPermissionLevels:
         resp = client.get("/api/users", headers=editor_token)
         assert resp.status_code == 403
 
-    def test_viewer_cannot_create_device(self, client, viewer_token):
+    def test_viewer_can_create_level1_device(self, client, viewer_token):
+        """Viewer can create level-1 devices (new permission)."""
         resp = client.post("/api/devices", json={
             "name": "test", "device_type": "server", "accounts": []
         }, headers=viewer_token)
+        assert resp.status_code == 200
+
+    def test_viewer_cannot_create_level2_device(self, client, viewer_token):
+        """Viewer cannot create devices above level 1."""
+        resp = client.post("/api/devices", json={
+            "name": "test", "device_type": "server", "device_level": "二级设备", "accounts": []
+        }, headers=viewer_token)
+        assert resp.status_code == 403
+
+    def test_editor_can_create_level2_device(self, client, editor_token):
+        """Editor can create level-2 devices."""
+        resp = client.post("/api/devices", json={
+            "name": "SW-L2", "device_type": "交换机", "device_level": "二级设备", "accounts": []
+        }, headers=editor_token)
+        assert resp.status_code == 200
+
+    def test_editor_cannot_create_level3_device(self, client, editor_token):
+        """Editor cannot create devices above level 2."""
+        resp = client.post("/api/devices", json={
+            "name": "SW-L3", "device_type": "交换机", "device_level": "三级设备", "accounts": []
+        }, headers=editor_token)
+        assert resp.status_code == 403
+
+    def test_operator_can_create_level3_device(self, client, operator_token):
+        """Operator can create level-3 devices."""
+        resp = client.post("/api/devices", json={
+            "name": "OP-L3", "device_type": "路由器", "device_level": "三级设备", "accounts": []
+        }, headers=operator_token)
+        assert resp.status_code == 200
+
+    def test_operator_cannot_create_level4_device(self, client, operator_token):
+        """Operator cannot create level-4 devices."""
+        resp = client.post("/api/devices", json={
+            "name": "OP-L4", "device_type": "路由器", "device_level": "四级设备", "accounts": []
+        }, headers=operator_token)
         assert resp.status_code == 403
 
     def test_editor_can_create_device(self, client, editor_token):

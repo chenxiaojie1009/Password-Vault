@@ -1,7 +1,7 @@
 """Data models"""
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, ForeignKey, Boolean
+    Column, Integer, BigInteger, String, Text, DateTime, ForeignKey, Boolean
 )
 from sqlalchemy.orm import relationship
 from database import Base
@@ -44,6 +44,7 @@ class Device(Base):
     accounts = relationship("DeviceAccount", back_populates="device", cascade="all, delete-orphan")
     ips = relationship("DeviceIP", back_populates="device", cascade="all, delete-orphan")
     macs = relationship("DeviceMAC", back_populates="device", cascade="all, delete-orphan")
+    files = relationship("DeviceFile", back_populates="device", cascade="all, delete-orphan")
 
 
 class DeviceIP(Base):
@@ -110,22 +111,24 @@ class SystemConfig(Base):
     value = Column(String(512), nullable=False)
 
 
+class DeviceFile(Base):
+    __tablename__ = "device_files"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename = Column(String(512), nullable=False)
+    original_filename = Column(String(512), nullable=False)
+    file_size = Column(BigInteger, nullable=False)
+    file_type = Column(String(16), nullable=False)
+    upload_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=beijing_now)
+    device = relationship("Device", back_populates="files")
+    uploader = relationship("User")
+
+
 class DeviceVisibility(Base):
     __tablename__ = "device_visibility"
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
     user = relationship("User", back_populates="visible_devices")
-    device = relationship("Device")
-
-
-class DeviceFile(Base):
-    __tablename__ = "device_files"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
-    filename = Column(String(512), nullable=False)
-    original_name = Column(String(512), nullable=False)
-    file_size = Column(Integer, default=0)
-    file_type = Column(String(32), default="")
-    created_at = Column(DateTime, default=beijing_now)
     device = relationship("Device")

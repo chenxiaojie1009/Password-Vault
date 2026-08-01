@@ -65,3 +65,17 @@ def editor_token(client):
     resp = client.post("/api/auth/login", json={"username": "editor", "password": "editor123"})
     assert resp.status_code == 200
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+@pytest.fixture
+def operator_token(client):
+    from models import User
+    from auth import hash_password
+    db = SessionLocal()
+    from main import init_admin; init_admin(db)
+    operator = User(username="operator", password_hash=hash_password("operator123"),
+                    display_name="Operator", role="operator")
+    db.add(operator); db.commit(); db.close()
+    resp = client.post("/api/auth/login", json={"username": "operator", "password": "operator123"})
+    assert resp.status_code == 200
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}

@@ -1,15 +1,30 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-node_modules/
-dist/
-.env
-*.db
-backups/
-build/
-*.spec
-frontend-dist/
-deploy/
 *.egg-info/
 .pytest_cache/
+
+# Node / frontend
+node_modules/
+dist/
+frontend-dist/
+
+# 数据与运行产物（不入库）
+*.db
+*.log
+uploads/
+backups/
+build/
+.env
+
+# 部署包：只忽略可执行文件与运行数据，保留启动脚本
+deploy/DeviceManager.exe
+deploy/device_manager.db
+deploy/server.log
+deploy/watchdog.log
+deploy/backups/
+deploy/uploads/
+
+# 内部工具目录
 .kunsdd/

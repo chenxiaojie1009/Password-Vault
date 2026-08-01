@@ -78,3 +78,10 @@ class AuditLogResponse(BaseModel):
 class BatchImportResult(BaseModel): total: int; success: int; failed: int; errors: List[str] = []
 class BackupInfo(BaseModel): filename: str; size_bytes: int; created_at: str
 class ExportRequest(BaseModel): format: str = "xlsx"; device_ids: Optional[List[int]] = None
+
+class DeviceFileResponse(BaseModel):
+    id: int; device_id: int; original_filename: str; file_size: int; file_type: str
+    upload_by_name: str = ""; created_at: datetime
+    model_config = {"from_attributes": True}
+
+class DeviceFileUploadResult(BaseModel): success: int; failed: int; errors: List[str] = []

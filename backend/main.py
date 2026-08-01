@@ -1,7 +1,7 @@
 """
 Password Manager Backend - FastAPI
 """
-import os, sys, re, io, shutil
+import os, sys, re, io, shutil, uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -28,7 +28,7 @@ if sys.stderr is None:
 from database import engine, get_db, Base
 from models import (
     User, Device, DeviceIP, DeviceMAC, DeviceAccount,
-    PasswordHistory, AuditLog, SystemConfig, DeviceVisibility, beijing_now
+    PasswordHistory, AuditLog, SystemConfig, DeviceVisibility, DeviceFile, beijing_now
 )
 from schemas import (
     LoginRequest, TokenResponse, UserCreate, UserResponse,
@@ -37,15 +37,41 @@ from schemas import (
     IPCreate, IPResponse, MACCreate, MACResponse,
     PasswordHistoryResponse, AuditLogResponse,
     PasswordStrengthResult, BatchImportResult, BackupInfo, ExportRequest, ChangePasswordRequest,
-    UserUpdate,
+    UserUpdate, DeviceFileResponse, DeviceFileUploadResult,
 )
-# Role-level mapping: max device level each role can access
-def role_max_level(role: str) -> int:
-    return {"admin": 4, "operator": 3, "editor": 2, "viewer": 1}.get(role, 1)
 from auth import (
     hash_password, verify_password, encrypt_password, decrypt_password,
     create_access_token, get_current_user, require_admin, require_write, require_operator,
 )
+
+# ---- Device level helpers ----
+# Role-level mapping: max device level each role can access
+ROLE_MAX_LEVEL = {"admin": 4, "operator": 3, "editor": 2, "viewer": 1}
+LEVEL_NUM = {"一级设备": 1, "二级设备": 2, "三级设备": 3, "四级设备": 4}
+
+
+def role_max_level(role: str) -> int:
+    """Max device level (1-4) a role can create/edit/view."""
+    return ROLE_MAX_LEVEL.get(role, 1)
+
+
+def device_level_num(level: str) -> int:
+    """Convert device level string to number (default 1)."""
+    return LEVEL_NUM.get(level or "", 1)
+
+
+def allowed_levels(role: str) -> list:
+    """List of level strings a role may access."""
+    max_lv = role_max_level(role)
+    return [lv for lv, n in LEVEL_NUM.items() if n <= max_lv]
+
+
+def check_level_access(device_level: str, current_user: User, hidden: bool = False):
+    """Raise 403/404 if role cannot access device of given level."""
+    if device_level_num(device_level) > role_max_level(current_user.role):
+        if hidden:
+            raise HTTPException(status_code=404, detail="设备不存在")
+        raise HTTPException(status_code=403, detail="无权操作该等级设备")
 
 app = FastAPI(title="Password Manager", version="1.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -54,8 +80,14 @@ Base.metadata.create_all(bind=engine)
 scheduler = BackgroundScheduler()
 BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 os.makedirs(BACKUP_DIR, exist_ok=True)
-UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
+
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB
+ALLOWED_EXTENSIONS = {
+    '.doc', '.docx', '.xls', '.xlsx', '.pdf',
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'
+}
 
 
 def init_admin(db: Session):
@@ -313,6 +345,8 @@ def list_devices(keyword: str = Query(""), device_type: str = Query(""),
     # - operator/admin: all devices
     if current_user.role in ("viewer", "editor"):
         q = q.filter(Device.is_network_involved == False)
+    # Level-based filtering: each role can only see devices up to its max level
+    q = q.filter(Device.device_level.in_(allowed_levels(current_user.role)))
 
     total = q.count(); devices = q.order_by(Device.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"items": [DeviceListItem(
@@ -331,6 +365,8 @@ def get_device(device_id: int, db: Session = Depends(get_db), current_user: User
     if not d: raise HTTPException(status_code=404, detail="设备不存在")
     if current_user.role in ("viewer", "editor") and d.is_network_involved:
         raise HTTPException(status_code=404, detail="设备不存在")
+    # Level-based access control (hide as 404 for read)
+    check_level_access(d.device_level, current_user, hidden=True)
     return DeviceResponse(
         id=d.id, name=d.name,
         device_type=d.device_type,
@@ -344,7 +380,9 @@ def get_device(device_id: int, db: Session = Depends(get_db), current_user: User
 
 @app.post("/api/devices", response_model=DeviceResponse)
 def create_device(body: DeviceCreate, request: Request, db: Session = Depends(get_db),
-                  current_user: User = Depends(require_write)):
+                  current_user: User = Depends(get_current_user)):
+    # Level-based creation: role can only create devices up to its max level
+    check_level_access(body.device_level or "一级设备", current_user)
     d = Device(name=body.name, device_type=body.device_type or "其他",
                location=body.location, notes=body.notes, created_by=current_user.id, device_level=body.device_level or "一级设备",
                is_network_involved=body.is_network_involved)
@@ -359,16 +397,31 @@ def create_device(body: DeviceCreate, request: Request, db: Session = Depends(ge
     db.commit(); db.refresh(d)
     ip = request.client.host if request.client else ""
     write_audit(db, current_user.id, "create", "device", d.id, f"创建设备 {d.name}", ip)
-    return get_device(d.id, db, current_user)
+    # Build response directly (not via get_device) so the creator sees it even if
+    # network-involved devices are hidden from their role afterwards.
+    return DeviceResponse(
+        id=d.id, name=d.name,
+        device_type=d.device_type,
+        location=d.location, notes=d.notes, is_network_involved=d.is_network_involved, device_level=d.device_level,
+        created_at=d.created_at, updated_at=d.updated_at,
+        ips=[IPResponse(id=ip.id, address=ip.address, label=ip.label) for ip in d.ips],
+        macs=[MACResponse(id=m.id, address=m.address, label=m.label) for m in d.macs],
+        accounts=[_account_to_response(a) for a in d.accounts],
+    )
 
 
 @app.put("/api/devices/{device_id}", response_model=DeviceResponse)
 def update_device(device_id: int, body: DeviceUpdate, request: Request,
-                  db: Session = Depends(get_db), current_user: User = Depends(require_write)):
+                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     d = db.query(Device).filter(Device.id == device_id).first()
     if not d: raise HTTPException(status_code=404, detail="设备不存在")
-    if current_user.role == "editor" and d.is_network_involved:
-        raise HTTPException(status_code=403, detail="编辑者不可修改涉网设备")
+    if current_user.role in ("viewer", "editor") and d.is_network_involved:
+        raise HTTPException(status_code=404, detail="设备不存在")
+    # Level-based edit: role can only edit devices up to its max level
+    check_level_access(d.device_level, current_user)
+    if body.device_level is not None:
+        # Upgrading level is also limited by role
+        check_level_access(body.device_level, current_user)
     if body.name is not None: d.name = body.name
     if body.device_type is not None:
         d.device_type = body.device_type
@@ -387,9 +440,13 @@ def update_device(device_id: int, body: DeviceUpdate, request: Request,
 
 @app.delete("/api/devices/{device_id}")
 def delete_device(device_id: int, request: Request, db: Session = Depends(get_db),
-                  current_user: User = Depends(require_write)):
+                  current_user: User = Depends(get_current_user)):
     d = db.query(Device).filter(Device.id == device_id).first()
     if not d: raise HTTPException(status_code=404, detail="设备不存在")
+    if current_user.role in ("viewer", "editor") and d.is_network_involved:
+        raise HTTPException(status_code=404, detail="设备不存在")
+    # Level-based delete: role can only delete devices up to its max level
+    check_level_access(d.device_level, current_user)
     name = d.name; db.delete(d); db.commit()
     ip = request.client.host if request.client else ""
     write_audit(db, current_user.id, "delete", "device", device_id, f"删除设备 {name}", ip)
@@ -397,11 +454,24 @@ def delete_device(device_id: int, request: Request, db: Session = Depends(get_db
 
 
 # ---- Accounts ----
+def _check_account_device_access(a: DeviceAccount, db: Session, current_user: User):
+    """Resolve account's device and enforce level/network access."""
+    dev = db.query(Device).filter(Device.id == a.device_id).first()
+    if not dev: raise HTTPException(status_code=404, detail="账号不存在")
+    if current_user.role in ("viewer", "editor") and dev.is_network_involved:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    check_level_access(dev.device_level, current_user)
+    return dev
+
+
 @app.post("/api/devices/{device_id}/accounts", response_model=DeviceAccountResponse)
 def add_account(device_id: int, body: DeviceAccountCreate, request: Request,
-                db: Session = Depends(get_db), current_user: User = Depends(require_write)):
+                db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     dev = db.query(Device).filter(Device.id == device_id).first()
     if not dev: raise HTTPException(status_code=404, detail="设备不存在")
+    if current_user.role in ("viewer", "editor") and dev.is_network_involved:
+        raise HTTPException(status_code=404, detail="设备不存在")
+    check_level_access(dev.device_level, current_user)
     enc = encrypt_password(body.password)
     a = DeviceAccount(device_id=device_id, username=body.username, password_encrypted=enc, notes=body.notes)
     db.add(a); db.flush()
@@ -415,9 +485,10 @@ def add_account(device_id: int, body: DeviceAccountCreate, request: Request,
 
 @app.put("/api/accounts/{account_id}", response_model=DeviceAccountResponse)
 def update_account_password(account_id: int, body: DeviceAccountCreate, request: Request,
-                            db: Session = Depends(get_db), current_user: User = Depends(require_write)):
+                            db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     a = db.query(DeviceAccount).filter(DeviceAccount.id == account_id).first()
     if not a: raise HTTPException(status_code=404, detail="账号不存在")
+    _check_account_device_access(a, db, current_user)
     old_enc = a.password_encrypted
     a.password_encrypted = encrypt_password(body.password)
     a.notes = body.notes if body.notes else a.notes
@@ -432,12 +503,144 @@ def update_account_password(account_id: int, body: DeviceAccountCreate, request:
 
 @app.delete("/api/accounts/{account_id}")
 def delete_account(account_id: int, request: Request, db: Session = Depends(get_db),
-                   current_user: User = Depends(require_write)):
+                   current_user: User = Depends(get_current_user)):
     a = db.query(DeviceAccount).filter(DeviceAccount.id == account_id).first()
     if not a: raise HTTPException(status_code=404, detail="账号不存在")
+    _check_account_device_access(a, db, current_user)
     db.delete(a); db.commit()
     write_audit(db, current_user.id, "delete", "account", account_id,
                 f"删除账号 {a.username}", request.client.host if request.client else "")
+    return {"ok": True}
+
+
+# ---- Device Files ----
+def _file_to_response(f: DeviceFile, db: Session) -> DeviceFileResponse:
+    u = db.query(User).filter(User.id == f.upload_by).first()
+    return DeviceFileResponse(
+        id=f.id, device_id=f.device_id,
+        original_filename=f.original_filename, file_size=f.file_size,
+        file_type=f.file_type,
+        upload_by_name=u.display_name or u.username if u else "",
+        created_at=f.created_at,
+    )
+
+
+def _check_file_device_access(device_id: int, db: Session, current_user: User, write_required: bool = False):
+    """Check device access; raise HTTPException if not allowed."""
+    dev = db.query(Device).filter(Device.id == device_id).first()
+    if not dev:
+        raise HTTPException(status_code=404, detail="设备不存在")
+    if current_user.role in ("viewer", "editor") and dev.is_network_involved:
+        raise HTTPException(status_code=404, detail="设备不存在")
+    # Level-based access control
+    check_level_access(dev.device_level, current_user, hidden=not write_required)
+    if write_required:
+        # Level-based write access is enforced by check_level_access above
+        pass
+    return dev
+
+
+@app.get("/api/devices/{device_id}/files", response_model=List[DeviceFileResponse])
+def list_device_files(device_id: int, db: Session = Depends(get_db),
+                      current_user: User = Depends(get_current_user)):
+    _check_file_device_access(device_id, db, current_user)
+    files = db.query(DeviceFile).filter(DeviceFile.device_id == device_id)\
+              .order_by(DeviceFile.created_at.desc()).all()
+    return [_file_to_response(f, db) for f in files]
+
+
+@app.post("/api/devices/{device_id}/files", response_model=DeviceFileUploadResult)
+async def upload_device_files(device_id: int, files: List[UploadFile] = File(...),
+                               db: Session = Depends(get_db),
+                               current_user: User = Depends(get_current_user)):
+    _check_file_device_access(device_id, db, current_user, write_required=True)
+    result = DeviceFileUploadResult(success=0, failed=0, errors=[])
+    device_dir = os.path.join(UPLOAD_DIR, str(device_id))
+    os.makedirs(device_dir, exist_ok=True)
+    for file in files:
+        try:
+            # Validate extension
+            ext = os.path.splitext(file.filename or "")[1].lower()
+            if ext not in ALLOWED_EXTENSIONS:
+                result.failed += 1
+                result.errors.append(f"{file.filename}: 不支持的文件类型 {ext}")
+                continue
+            # Read and validate size
+            contents = await file.read()
+            if len(contents) > MAX_UPLOAD_SIZE:
+                result.failed += 1
+                result.errors.append(f"{file.filename}: 文件超过 100MB")
+                continue
+            # Sanitize filename and save
+            safe_name = re.sub(r'[\\/:*?"<>|]', '_', file.filename or "unnamed")
+            stored_name = f"{uuid.uuid4().hex}_{safe_name}"
+            dest = os.path.join(device_dir, stored_name)
+            with open(dest, "wb") as f:
+                f.write(contents)
+            # Create DB record
+            df = DeviceFile(
+                device_id=device_id,
+                filename=stored_name,
+                original_filename=safe_name,
+                file_size=len(contents),
+                file_type=ext.lstrip('.'),
+                upload_by=current_user.id,
+            )
+            db.add(df)
+            result.success += 1
+        except Exception as e:
+            result.failed += 1
+            result.errors.append(f"{file.filename}: {str(e)}")
+    db.commit()
+    if result.success > 0:
+        write_audit(db, current_user.id, "upload", "file", device_id,
+                    f"上传 {result.success} 个文件")
+    return result
+
+
+@app.get("/api/files/{file_id}/download")
+def download_file(file_id: int, db: Session = Depends(get_db),
+                  current_user: User = Depends(get_current_user)):
+    f = db.query(DeviceFile).filter(DeviceFile.id == file_id).first()
+    if not f: raise HTTPException(status_code=404, detail="文件不存在")
+    _check_file_device_access(f.device_id, db, current_user)
+    dest = os.path.join(UPLOAD_DIR, str(f.device_id), f.filename)
+    if not os.path.exists(dest): raise HTTPException(status_code=404, detail="文件数据不存在")
+    # Determine MIME type
+    mime_map = {
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+        'gif': 'image/gif', 'bmp': 'image/bmp', 'webp': 'image/webp',
+    }
+    media_type = mime_map.get(f.file_type, 'application/octet-stream')
+    return FileResponse(dest, filename=f.original_filename, media_type=media_type)
+
+
+@app.delete("/api/files/{file_id}")
+def delete_file(file_id: int, request: Request, db: Session = Depends(get_db),
+                current_user: User = Depends(get_current_user)):
+    f = db.query(DeviceFile).filter(DeviceFile.id == file_id).first()
+    if not f: raise HTTPException(status_code=404, detail="文件不存在")
+    _check_file_device_access(f.device_id, db, current_user, write_required=True)
+    # Remove from disk
+    dest = os.path.join(UPLOAD_DIR, str(f.device_id), f.filename)
+    if os.path.exists(dest):
+        os.remove(dest)
+    # Remove from DB
+    db.delete(f); db.commit()
+    write_audit(db, current_user.id, "delete", "file", file_id,
+                f"删除文件 {f.original_filename}")
+    # Clean empty device directory
+    device_dir = os.path.join(UPLOAD_DIR, str(f.device_id))
+    try:
+        if os.path.exists(device_dir) and not os.listdir(device_dir):
+            os.rmdir(device_dir)
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -462,6 +665,8 @@ def get_password_history(account_id: int, db: Session = Depends(get_db), current
     dev = db.query(Device).filter(Device.id == acct.device_id).first()
     if dev and current_user.role in ("viewer", "editor") and dev.is_network_involved:
         raise HTTPException(status_code=404, detail="账号不存在")
+    if dev:
+        check_level_access(dev.device_level, current_user, hidden=True)
     history = db.query(PasswordHistory).filter(PasswordHistory.account_id == account_id)\
                .order_by(PasswordHistory.changed_at.desc()).all()
     return [_pw_hist_to_response(h, db) for h in history]
@@ -472,11 +677,15 @@ def list_all_password_history(device_id: int = Query(None), start_date: str = Qu
                               page_size: int = Query(50, ge=1, le=200),
                               db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     q = db.query(PasswordHistory)
-    # Filter by device visibility for viewer/editor
+    # Filter by device visibility + level for viewer/editor
     if current_user.role in ("viewer", "editor"):
         vis_dev = db.query(Device.id).filter(Device.is_network_involved == False).subquery()
         vis_acc = db.query(DeviceAccount.id).filter(DeviceAccount.device_id.in_(vis_dev)).subquery()
         q = q.filter(PasswordHistory.account_id.in_(vis_acc))
+    # Level-based filtering: role can only see history of devices up to its max level
+    lvl_dev = db.query(Device.id).filter(Device.device_level.in_(allowed_levels(current_user.role))).subquery()
+    lvl_acc = db.query(DeviceAccount.id).filter(DeviceAccount.device_id.in_(lvl_dev)).subquery()
+    q = q.filter(PasswordHistory.account_id.in_(lvl_acc))
     if device_id:
         subq = db.query(DeviceAccount.id).filter(DeviceAccount.device_id == device_id).subquery()
         q = q.filter(PasswordHistory.account_id.in_(subq))
@@ -581,13 +790,13 @@ def export_all(db: Session = Depends(get_db), current_user: User = Depends(requi
             macs_str = ", ".join(m.address for m in dev.macs)
             ts = dev.updated_at.strftime("%Y-%m-%d %H:%M") if dev.updated_at else ""
             if not accounts:
-                for col, val in enumerate([dev.name, dev.device_type, ips_str, macs_str, dev.location, "", "", dev.notes, ts], 1):
+                for col, val in enumerate([dev.name, dev.device_type, ips_str, macs_str, dev.location, "是" if dev.is_network_involved else "否", dev.device_level, "", "", dev.notes, ts], 1):
                     ws1.cell(row=row, column=col, value=val).border = tb
                 row += 1
             else:
                 for ac in accounts:
                     pwd = decrypt_password(ac.password_encrypted)
-                    for col, val in enumerate([dev.name, dev.device_type, ips_str, macs_str, dev.location, ac.username, pwd, ac.notes or dev.notes, ts], 1):
+                    for col, val in enumerate([dev.name, dev.device_type, ips_str, macs_str, dev.location, "是" if dev.is_network_involved else "否", dev.device_level, ac.username, pwd, ac.notes or dev.notes, ts], 1):
                         ws1.cell(row=row, column=col, value=val).border = tb
                     row += 1
         for i, w in enumerate([20, 12, 22, 22, 16, 6, 8, 14, 18, 30, 18], 1):
@@ -642,6 +851,9 @@ async def import_devices_xlsx(request: Request, file: UploadFile = File(...),
                 pwd = vals[8] if len(vals) > 8 else ""
                 notes = vals[9] if len(vals) > 9 else ""
                 if not name: result.failed += 1; result.errors.append(f"第{i}行：名称为空"); continue
+                # Level check: role cannot import devices above its max level
+                if device_level_num(dev_lv or "一级设备") > role_max_level(current_user.role):
+                    result.failed += 1; result.errors.append(f"第{i}行：超出角色可创建等级"); continue
                 dev = db.query(Device).filter(Device.name == name).first()
                 if not dev:
                     dev = Device(name=name, device_type=dtype or "其他", location=loc, notes=notes,
@@ -685,9 +897,29 @@ def download_import_template():
 def perform_backup():
     db_path = os.path.join(BASE_DIR, "device_manager.db")
     if not os.path.exists(db_path): return
-    shutil.copy2(db_path, os.path.join(BACKUP_DIR, f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"))
-    backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.endswith(".db")], reverse=True)
-    for old in backups[30:]: os.remove(os.path.join(BACKUP_DIR, old))
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    shutil.copy2(db_path, os.path.join(BACKUP_DIR, f"backup_{ts}.db"))
+    # Also backup uploads directory if it exists and has content
+    if os.path.exists(UPLOAD_DIR) and os.listdir(UPLOAD_DIR):
+        uploads_backup = os.path.join(BACKUP_DIR, f"uploads_{ts}.zip")
+        shutil.make_archive(uploads_backup.replace('.zip', ''), 'zip', UPLOAD_DIR)
+    # Clean old backups
+    for prefix in ["backup_", "uploads_"]:
+        ext = ".db" if prefix == "backup_" else ".zip"
+        old_files = sorted([f for f in os.listdir(BACKUP_DIR) if f.startswith(prefix) and f.endswith(ext)], reverse=True)
+        for old in old_files[30:]:
+            os.remove(os.path.join(BACKUP_DIR, old))
+
+
+def _restore_uploads_from_backup(ts: str):
+    """Restore uploads from a backup zip matching the given timestamp."""
+    uploads_zip = os.path.join(BACKUP_DIR, f"uploads_{ts}.zip")
+    if os.path.exists(uploads_zip):
+        # Clear current uploads
+        if os.path.exists(UPLOAD_DIR):
+            shutil.rmtree(UPLOAD_DIR)
+        # Extract backup
+        shutil.unpack_archive(uploads_zip, UPLOAD_DIR)
 
 @app.get("/api/backups", response_model=List[BackupInfo])
 def list_backups(_: User = Depends(require_admin)):
@@ -722,6 +954,9 @@ def restore_backup(filename: str, db: Session = Depends(get_db), _: User = Depen
     perform_backup(); engine.dispose()
     shutil.copy2(bp, os.path.join(BASE_DIR, "device_manager.db"))
     Base.metadata.create_all(bind=engine)
+    # Restore uploads from matching backup
+    ts = filename.replace("backup_", "").replace(".db", "")
+    _restore_uploads_from_backup(ts)
     return {"ok": True}
 
 

@@ -1,11 +1,20 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Card, Form, Input, Select, Button, Space, Divider, message, Popconfirm, Typography, Switch, Upload } from "antd";
-import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, UploadOutlined, DownloadOutlined } from "@ant-design/icons";
+import { Card, Form, Input, Select, Button, Space, Divider, message, Popconfirm, Typography, Switch, Upload, Tag } from "antd";
+const { Dragger } = Upload;
+import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, InboxOutlined, DownloadOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
 const { Title } = Typography;
 const DEFAULT_TYPES = ["服务器", "交换机", "纵加设备", "路由器", "防火墙", "存储设备", "工作站", "其他"];
+const ALL_LEVELS = ["一级设备", "二级设备", "三级设备", "四级设备"];
+const ROLE_MAX_LEVEL: Record<string, number> = { admin: 4, operator: 3, editor: 2, viewer: 1 };
+
+// Levels this role is allowed to create/edit (e.g. viewer → only 一级设备)
+function allowedLevels(role: string): string[] {
+  const max = ROLE_MAX_LEVEL[role] || 1;
+  return ALL_LEVELS.filter((_, i) => i + 1 <= max);
+}
 
 export default function DeviceForm() {
   const { id } = useParams();
@@ -14,8 +23,11 @@ export default function DeviceForm() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deviceTypes, setDeviceTypes] = useState<string[]>(DEFAULT_TYPES);
-  const [files, setFiles] = useState<{id:number;filename:string;file_size:number;file_type:string;created_at:string}[]>([]);
   const isEdit = !!id;
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [existingFiles, setExistingFiles] = useState<any[]>([]);
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const levelOptions = allowedLevels(user.role || "viewer");
 
   useEffect(() => {
     api.get("/config/device_types").then(r => {
@@ -43,24 +55,12 @@ export default function DeviceForm() {
         })
         .catch(() => message.error("加载设备失败"))
         .finally(() => setLoading(false));
-      // Fetch files
-      api.get("/devices/" + id + "/files").then(r => setFiles(r.data||[])).catch(()=>{});
+      // Fetch existing files
+      api.get("/devices/" + id + "/files")
+        .then((res) => setExistingFiles(res.data || []))
+        .catch(() => {});
     }
   }, [id, form]);
-
-  const handleUpload = async (file: File) => {
-    const fd = new FormData(); fd.append("file", file);
-    await api.post("/devices/" + id + "/files", fd);
-    message.success("上传成功");
-    const r = await api.get("/devices/" + id + "/files");
-    setFiles(r.data || []);
-    return false;
-  };
-
-  const handleDeleteFile = async (fileId: number) => {
-    await api.delete("/files/" + fileId);
-    setFiles(files.filter(f => f.id !== fileId));
-  };
 
   const onFinish = async (values: any) => {
     setSaving(true);
@@ -92,9 +92,32 @@ export default function DeviceForm() {
           }
         }
         message.success("设备已更新");
+        // Upload pending files for existing device
+        if (pendingFiles.length > 0) {
+          const fd = new FormData();
+          pendingFiles.forEach((f) => fd.append("files", f));
+          try {
+            const upRes = await api.post("/devices/" + id + "/files", fd);
+            if (upRes.data.errors?.length) {
+              message.warning("部分文件上传失败: " + upRes.data.errors.slice(0, 3).join("; "));
+            }
+          } catch { message.warning("文件上传失败"); }
+        }
       } else {
-        await api.post("/devices", payload);
+        const res = await api.post("/devices", payload);
+        const newId = res.data.id;
         message.success("设备已创建");
+        // Upload pending files to new device
+        if (pendingFiles.length > 0) {
+          const fd = new FormData();
+          pendingFiles.forEach((f) => fd.append("files", f));
+          try {
+            const upRes = await api.post("/devices/" + newId + "/files", fd);
+            if (upRes.data.errors?.length) {
+              message.warning("部分文件上传失败: " + upRes.data.errors.slice(0, 3).join("; "));
+            }
+          } catch { message.warning("文件上传失败"); }
+        }
       }
       navigate("/");
     } catch (err: any) {
@@ -115,6 +138,20 @@ export default function DeviceForm() {
         })),
       });
     } catch { message.error("删除失败"); }
+  };
+
+  const deleteFile = async (fileId: number) => {
+    try {
+      await api.delete("/files/" + fileId);
+      message.success("文件已删除");
+      setExistingFiles(prev => prev.filter(f => f.id !== fileId));
+    } catch { message.error("删除文件失败"); }
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
   };
 
   return (
@@ -152,7 +189,7 @@ export default function DeviceForm() {
             <Switch checkedChildren="是" unCheckedChildren="否" />
           </Form.Item>
           <Form.Item name="device_level" label="设备分级" initialValue="一级设备" rules={[{ required: true }]}>
-            <Select options={["一级设备","二级设备","三级设备","四级设备"].map(t=>({label:t,value:t}))} style={{ width: 140 }} />
+            <Select options={levelOptions.map(t => ({ label: t, value: t }))} style={{ width: 140 }} />
           </Form.Item>
 
           <Title level={5}>IP 地址</Title>
@@ -231,32 +268,80 @@ export default function DeviceForm() {
           </Form.List>
 
           <Divider />
+          <Title level={5}>附件</Title>
+          {/* Existing files (edit mode) */}
+          {isEdit && existingFiles.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              {existingFiles.map((f: any) => (
+                <div key={f.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #f0f0f0" }}>
+                  <Space>
+                    <Tag>{f.file_type?.toUpperCase()}</Tag>
+                    <span>{f.original_filename}</span>
+                    <span style={{ color: "#999", fontSize: 12 }}>{formatSize(f.file_size)}</span>
+                  </Space>
+                  <Space size={4}>
+                    <Button size="small" type="link" icon={<DownloadOutlined />}
+                      onClick={async () => {
+                        try {
+                          const res = await api.get("/files/" + f.id + "/download", { responseType: "blob" });
+                          const url = URL.createObjectURL(new Blob([res.data]));
+                          const a = document.createElement("a");
+                          a.href = url; a.download = f.original_filename; a.click();
+                          URL.revokeObjectURL(url);
+                        } catch { message.error("下载失败"); }
+                      }}>下载</Button>
+                    <Popconfirm title="确定删除此文件？" onConfirm={() => deleteFile(f.id)}>
+                      <Button size="small" type="link" danger icon={<DeleteOutlined />}>删除</Button>
+                    </Popconfirm>
+                  </Space>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Pending files to upload */}
+          {pendingFiles.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {pendingFiles.map((f, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #f0f0f0" }}>
+                  <Space>
+                    <Tag color="processing">待上传</Tag>
+                    <span>{f.name}</span>
+                    <span style={{ color: "#999", fontSize: 12 }}>{formatSize(f.size)}</span>
+                  </Space>
+                  <Button size="small" danger type="link" icon={<DeleteOutlined />}
+                    onClick={() => setPendingFiles(prev => prev.filter((_, j) => j !== i))}>移除</Button>
+                </div>
+              ))}
+            </div>
+          )}
+          <Dragger
+            multiple
+            accept=".doc,.docx,.xls,.xlsx,.pdf,.png,.jpg,.jpeg,.gif,.bmp,.webp"
+            showUploadList={false}
+            beforeUpload={(file) => {
+              const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+              const allowed = ['.doc','.docx','.xls','.xlsx','.pdf','.png','.jpg','.jpeg','.gif','.bmp','.webp'];
+              if (!allowed.includes(ext)) {
+                message.error(`不支持的文件类型: ${ext}`);
+                return false;
+              }
+              if (file.size > 100 * 1024 * 1024) {
+                message.error(`文件 ${file.name} 超过 100MB`);
+                return false;
+              }
+              setPendingFiles(prev => [...prev, file]);
+              return false;
+            }}
+          >
+            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+            <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
+            <p className="ant-upload-hint">支持 Word、Excel、PDF、图片，单文件不超过 100MB</p>
+          </Dragger>
+
+          <Divider />
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={2} placeholder="补充说明" />
           </Form.Item>
-
-          {isEdit && (
-            <div style={{ marginBottom: 16 }}>
-              <Title level={5}>附件</Title>
-              <Upload beforeUpload={handleUpload as any} showUploadList={false} accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.bmp">
-                <Button icon={<UploadOutlined />}>上传文件 (PDF/Word/Excel/图片)</Button>
-              </Upload>
-              {files.length > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  {files.map(f => (
-                    <Space key={f.id} style={{ marginRight: 8, marginBottom: 4 }}>
-                      <a href={"/api/files/" + f.id} target="_blank" download={f.filename}>{f.filename}</a>
-                      <span style={{ color: "#999", fontSize: 12 }}>{(f.file_size/1024).toFixed(1)}KB</span>
-                      <Popconfirm title="删除此附件?" onConfirm={() => handleDeleteFile(f.id)}>
-                        <Button size="small" danger icon={<DeleteOutlined />} />
-                      </Popconfirm>
-                    </Space>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           <Space>
             <Button type="primary" htmlType="submit" loading={saving}>{isEdit ? "Save" : "Create"}</Button>
             <Button onClick={() => navigate("/")}>取消</Button>

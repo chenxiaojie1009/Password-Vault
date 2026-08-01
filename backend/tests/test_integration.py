@@ -65,5 +65,8 @@ class TestFullWorkflow:
 
         viewer_resp = client.post("/api/auth/login", json={"username": "auditor1", "password": "au123456"})
         v_auth = {"Authorization": f"Bearer {viewer_resp.json()['access_token']}"}
-        assert client.post("/api/devices", json={"name": "Fail", "device_type": "其他", "ips": [], "macs": [], "accounts": []}, headers=v_auth).status_code == 403
+        # Viewer can now create level-1 devices
+        assert client.post("/api/devices", json={"name": "ViewerDevice", "device_type": "其他", "ips": [], "macs": [], "accounts": []}, headers=v_auth).status_code == 200
+        # Viewer cannot create level-2 devices
+        assert client.post("/api/devices", json={"name": "Fail", "device_type": "其他", "device_level": "二级设备", "ips": [], "macs": [], "accounts": []}, headers=v_auth).status_code == 403
         assert client.get("/api/devices", headers=v_auth).status_code == 200

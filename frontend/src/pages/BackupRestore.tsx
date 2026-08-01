@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Card, Button, Table, Space, Typography, message, Popconfirm, Upload, Divider, Tag, Alert } from "antd";
+import { Card, Button, Table, Space, Typography, message, Popconfirm, Upload, Divider, Alert } from "antd";
 import { CloudUploadOutlined, DownloadOutlined, HistoryOutlined, RestOutlined, CloudServerOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
@@ -33,10 +33,15 @@ export default function BackupRestore() {
     } catch { message.error("还原失败"); }
   };
 
-  const handleDownload = (filename: string) => {
-    const a = document.createElement("a");
-    a.href = "/api/backups/download/" + filename;
-    a.download = filename; a.click();
+  const handleDownload = async (filename: string) => {
+    try {
+      const res = await api.get("/backups/download/" + filename, { responseType: "blob" });
+      const blob = new Blob([res.data]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch { message.error("下载失败"); }
   };
 
   const handleUploadRestore = async (file: File): Promise<false> => {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Button, Dropdown, Modal, Form, Input, theme, message, Grid } from 'antd';
 const { useBreakpoint } = Grid;
-import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined, CloudServerOutlined, SafetyOutlined } from '@ant-design/icons';
+import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined, CloudServerOutlined } from '@ant-design/icons';
 import api from '../api/client';
 
 const { Header, Sider, Content } = Layout;
@@ -28,8 +28,7 @@ export default function AppLayout() {
     ...(user.role === 'admin' ? [
       { key: '/audit', icon: <AuditOutlined />, label: '审计日志' },
       { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
-      { key: '/backup', icon: <CloudServerOutlined />, label: '备份与还原' },
-      { key: '/upgrade', icon: <SafetyOutlined />, label: '升级与还原' }
+      { key: '/backup', icon: <CloudServerOutlined />, label: '备份与还原' }
     ] : []),
   ];
 
@@ -51,7 +50,7 @@ export default function AppLayout() {
     }
   };
 
-  const roleLabel: Record<string, string> = { admin: '管理员', editor: '编辑者', viewer: '查看者' };
+  const roleLabel: Record<string, string> = { admin: '管理员', operator: '运维者', editor: '编辑者', viewer: '查看者' };
 
   const userMenuItems = [
     { key: 'role', label: `身份：${roleLabel[user.role] || user.role}`, disabled: true },
