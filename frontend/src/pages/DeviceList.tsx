@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Table, Button, Input, Select, Space, Tag, Card, Popconfirm, message, Tooltip, Grid, Pagination } from "antd";
 const { useBreakpoint } = Grid;
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, ReloadOutlined, EyeOutlined } from "@ant-design/icons";
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, ReloadOutlined, EyeOutlined, CloudServerOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client";
@@ -115,7 +115,20 @@ export default function DeviceList() {
 
   return (
     <div>
-      <Card styles={{ body: { paddingBottom: 0 } }}>
+      <div className="stagger">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              width: 34, height: 34, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center",
+              background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", color: "#fff", boxShadow: "0 4px 12px rgba(59,130,246,0.4)",
+            }}><CloudServerOutlined /></span>
+            设备列表
+          </div>
+          <div style={{ color: "#94a3b8", fontSize: 13, marginTop: 4, marginLeft: 44 }}>共 {total} 台设备 · 内网账号密码集中管理</div>
+        </div>
+      </div>
+      <Card className="glass-card" styles={{ body: { paddingBottom: 0 } }}>
         <Space wrap style={{ marginBottom: 16, width: "100%", justifyContent: "space-between" }}>
           <Space wrap>
             <Input placeholder="搜索名称/IP/MAC" prefix={<SearchOutlined />} value={search}
@@ -127,15 +140,16 @@ export default function DeviceList() {
           </Space>
           <Space>
             {canEdit && <Button icon={<ImportOutlined />} onClick={handleImport}>批量导入</Button>}
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/devices/new")}>添加设备</Button>
+            <Button type="primary" className="gradient-btn" icon={<PlusOutlined />} onClick={() => navigate("/devices/new")}>添加设备</Button>
             <Button icon={<ExportOutlined />} onClick={handleExport}>导出</Button>
           </Space>
         </Space>
       </Card>
+      </div>
       {isMobile ? (
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 12 }} className="stagger">
           {devices.map(d => (
-            <Card key={d.id} size="small" style={{ marginBottom: 8 }}>
+            <Card key={d.id} size="small" className="device-card" style={{ marginBottom: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <div style={{ fontWeight: 600 }}>

@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
-import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, Popconfirm, message, Typography, Grid } from "antd";
+import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, Popconfirm, message, Grid } from "antd";
 const { useBreakpoint } = Grid;
 import { TeamOutlined, PlusOutlined, KeyOutlined, EditOutlined, DownloadOutlined, ImportOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
-const { Title } = Typography;
 const roleColors: Record<string, string> = { admin: "red", editor: "blue", viewer: "green", operator: "orange" };
 
 interface UserRecord {
@@ -154,19 +153,27 @@ export default function UserManagement() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <Title level={4} style={{ margin: 0 }}><TeamOutlined style={{ marginRight: 8 }} />用户管理</Title>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              width: 34, height: 34, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center",
+              background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", color: "#fff", boxShadow: "0 4px 12px rgba(59,130,246,0.4)",
+            }}><TeamOutlined /></span>
+            用户管理
+          </div>
+        </div>
         <Space>
           <Button icon={<DownloadOutlined />} onClick={handleExportAll}>导出全部</Button>
           <Button icon={<ImportOutlined />} onClick={handleImportUsers}>导入用户</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>添加用户</Button>
+          <Button type="primary" className="gradient-btn" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>添加用户</Button>
         </Space>
       </div>
-      <Card>
+      <Card className="glass-card">
         {isMobile ? (
-          <div>
+          <div className="stagger">
             {data.map(u => (
-              <Card key={u.id} size="small" style={{ marginBottom: 8 }}>
+              <Card key={u.id} size="small" className="device-card" style={{ marginBottom: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <div style={{ fontWeight: 600 }}>{u.display_name || u.username}</div>

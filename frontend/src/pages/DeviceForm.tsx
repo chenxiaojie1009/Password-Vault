@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Card, Form, Input, Select, Button, Space, Divider, message, Popconfirm, Typography, Switch, Upload, Tag } from "antd";
 const { Dragger } = Upload;
-import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, InboxOutlined, DownloadOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, InboxOutlined, DownloadOutlined, EditOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
 const { Title } = Typography;
@@ -155,12 +155,18 @@ export default function DeviceForm() {
   };
 
   return (
-    <div style={{ maxWidth: "100%", width: "100%", padding: "0 8px", margin: "0 auto" }}>
-      <Space style={{ marginBottom: 16 }}>
+    <div style={{ maxWidth: "100%", width: "100%", padding: "0 8px", margin: "0 auto" }} className="page-transition">
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/")}>返回</Button>
-        <Title level={4} style={{ margin: 0 }}>{isEdit ? "编辑设备" : "添加设备"}</Title>
-      </Space>
-      <Card loading={loading}>
+        <div style={{ fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{
+            width: 34, height: 34, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center",
+            background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", color: "#fff", boxShadow: "0 4px 12px rgba(59,130,246,0.4)",
+          }}>{isEdit ? <EditOutlined /> : <PlusOutlined />}</span>
+          {isEdit ? "编辑设备" : "添加设备"}
+        </div>
+      </div>
+      <Card loading={loading} className="glass-card">
         <Form form={form} layout="vertical" onFinish={onFinish}
           initialValues={{ device_type: "其他", ips: [{ address: "", label: "" }], macs: [{ address: "", label: "" }], accounts: [{ username: "", password: "", notes: "" }] }}>
           <Title level={5}>基本信息</Title>
@@ -343,7 +349,7 @@ export default function DeviceForm() {
             <Input.TextArea rows={2} placeholder="补充说明" />
           </Form.Item>
           <Space>
-            <Button type="primary" htmlType="submit" loading={saving}>{isEdit ? "Save" : "Create"}</Button>
+            <Button type="primary" className="gradient-btn" htmlType="submit" loading={saving}>{isEdit ? "保存修改" : "创建设备"}</Button>
             <Button onClick={() => navigate("/")}>取消</Button>
           </Space>
         </Form>

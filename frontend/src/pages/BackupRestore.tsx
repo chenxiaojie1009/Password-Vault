@@ -3,7 +3,7 @@ import { Card, Button, Table, Space, Typography, message, Popconfirm, Upload, Di
 import { CloudUploadOutlined, DownloadOutlined, HistoryOutlined, RestOutlined, CloudServerOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 
 interface BackupInfo {
   filename: string; size_bytes: number; created_at: string;
@@ -78,7 +78,17 @@ export default function BackupRestore() {
 
   return (
     <div>
-      <Title level={4}><HistoryOutlined style={{ marginRight: 8 }} />备份与还原</Title>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              width: 34, height: 34, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center",
+              background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", color: "#fff", boxShadow: "0 4px 12px rgba(59,130,246,0.4)",
+            }}><HistoryOutlined /></span>
+            备份与还原
+          </div>
+        </div>
+      </div>
 
       <Alert type="info" showIcon style={{ marginBottom: 16 }}
         message="使用说明"
@@ -92,9 +102,9 @@ export default function BackupRestore() {
         }
       />
 
-      <Card size="small" style={{ marginBottom: 16 }}>
+      <Card size="small" className="glass-card" style={{ marginBottom: 16 }}>
         <Space wrap>
-          <Button type="primary" icon={<CloudServerOutlined />} onClick={handleCreate}>立即备份</Button>
+          <Button type="primary" className="gradient-btn" icon={<CloudServerOutlined />} onClick={handleCreate}>立即备份</Button>
           <Upload accept=".db" maxCount={1} showUploadList={false} beforeUpload={handleUploadRestore as any}>
             <Button icon={<CloudUploadOutlined />}>上传还原</Button>
           </Upload>
@@ -107,7 +117,7 @@ export default function BackupRestore() {
         </Text>
       </Card>
 
-      <Card title="历史备份">
+      <Card title="历史备份" className="glass-card">
         <Table rowKey="filename" columns={columns} dataSource={backups} loading={loading}
           pagination={{ pageSize: 15, showTotal: (t: number) => `共 ${t} 份` }}
           locale={{ emptyText: "暂无备份记录" }} />

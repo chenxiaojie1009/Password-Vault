@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
-import { Table, Card, Input, Select, Typography, Space, Tag, DatePicker, Grid } from "antd";
+import { Table, Card, Input, Select, Space, Tag, DatePicker, Grid } from "antd";
 const { useBreakpoint } = Grid;
 import { AuditOutlined, SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import api from "../api/client";
 
-const { Title } = Typography;
 const { RangePicker } = DatePicker;
 const actionColors: Record<string, string> = { create: "green", update: "blue", delete: "red", export: "orange", import: "purple", login: "cyan" };
 const actionLabels: Record<string, string> = { create: "创建", update: "修改", delete: "删除", export: "导出", import: "导入", login: "登录" };
@@ -46,8 +45,16 @@ export default function AuditLog() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
-        <Title level={4} style={{ margin: 0 }}><AuditOutlined style={{ marginRight: 8 }} />操作日志审计</Title>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              width: 34, height: 34, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center",
+              background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", color: "#fff", boxShadow: "0 4px 12px rgba(59,130,246,0.4)",
+            }}><AuditOutlined /></span>
+            操作日志审计
+          </div>
+        </div>
         <Space wrap>
           <Input placeholder="搜索用户" prefix={<SearchOutlined />} value={userFilter}
             onChange={(e) => setUserFilter(e.target.value)} onPressEnter={fetchLogs} style={{ width: isMobile ? 120 : 160 }} />
@@ -57,7 +64,7 @@ export default function AuditLog() {
             placeholder={["开始", "结束"]} style={{ width: isMobile ? 180 : undefined }} />
         </Space>
       </div>
-      <Card>
+      <Card className="glass-card">
         <Table rowKey="id" columns={columns} dataSource={data} loading={loading} scroll={{ x: 700 }}
           pagination={{ current: page, pageSize: 15, showTotal: (t: number) => `共 ${t} 条`, onChange: (p) => setPage(p) }}
           locale={{ emptyText: "暂无操作日志" }} />

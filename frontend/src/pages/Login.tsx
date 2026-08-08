@@ -54,26 +54,75 @@ export default function Login() {
     <>
       <div style={{
         minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-        background: "linear-gradient(135deg, #0f2027 0%, #203a43 40%, #2c5364 100%)",
+        position: "relative", overflow: "hidden",
+        background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 45%, #312e81 75%, #4338ca 100%)",
+        backgroundSize: "220% 220%",
+        animation: "gradientShift 16s ease infinite",
       }}>
-        <Card style={{ width: 400, borderRadius: 12, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}
-          styles={{ body: { padding: "36px 32px" } }}>
+        {/* 网格光晕 */}
+        <div style={{
+          position: "absolute", inset: 0,
+          backgroundImage: "radial-gradient(rgba(255,255,255,0.09) 1px, transparent 1px)",
+          backgroundSize: "34px 34px",
+          maskImage: "radial-gradient(ellipse 70% 60% at 50% 45%, black 30%, transparent 75%)",
+          WebkitMaskImage: "radial-gradient(ellipse 70% 60% at 50% 45%, black 30%, transparent 75%)",
+        }} />
+        {/* 漂浮光斑 */}
+        <div style={{
+          position: "absolute", width: 320, height: 320, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(59,130,246,0.45), transparent 70%)",
+          top: "8%", left: "10%", animation: "drift 14s ease-in-out infinite",
+        }} />
+        <div style={{
+          position: "absolute", width: 260, height: 260, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(139,92,246,0.4), transparent 70%)",
+          bottom: "10%", right: "12%", animation: "drift 18s ease-in-out infinite reverse",
+        }} />
+        <div style={{
+          position: "absolute", width: 200, height: 200, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(16,185,129,0.3), transparent 70%)",
+          top: "55%", left: "20%", animation: "drift 12s ease-in-out infinite 2s",
+        }} />
+        {/* 装饰图标 */}
+        <SafetyOutlined style={{
+          position: "absolute", fontSize: 260, color: "rgba(255,255,255,0.05)",
+          right: "-40px", top: "-60px", transform: "rotate(15deg)",
+        }} />
+
+        <Card className="glass-card" style={{ width: 400, borderRadius: 20, boxShadow: "0 24px 70px rgba(0,0,0,0.45)", animation: "scaleIn 0.5s cubic-bezier(0.22,1,0.36,1) both" }}
+          styles={{ body: { padding: "40px 36px" } }}>
           <div style={{ textAlign: "center", marginBottom: 32 }}>
-            <SafetyOutlined style={{ fontSize: 48, color: "#1677ff" }} />
-            <Title level={3} style={{ marginTop: 12, marginBottom: 4 }}>设备管理器</Title>
-            <Text type="secondary">内网设备账号管理平台</Text>
+            <div style={{
+              width: 72, height: 72, margin: "0 auto 16px", borderRadius: 20,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
+              boxShadow: "0 12px 32px rgba(59,130,246,0.5)",
+              animation: "floaty 5s ease-in-out infinite",
+            }}>
+              <SafetyOutlined style={{ fontSize: 36, color: "#fff" }} />
+            </div>
+            <Title level={3} style={{ margin: 0, marginBottom: 4, background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              设备管理器
+            </Title>
+            <Text type="secondary" style={{ fontSize: 14 }}>内网设备账号管理平台</Text>
           </div>
           <Form name="login" form={form} onFinish={doLogin} size="large">
             <Form.Item name="username" rules={[{ required: true, message: "请输入用户名" }]}>
-              <Input prefix={<UserOutlined />} placeholder="用户名" />
+              <Input prefix={<UserOutlined />} placeholder="用户名" style={{ borderRadius: 10 }} />
             </Form.Item>
             <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
-              <Input.Password prefix={<LockOutlined />} placeholder="密码" />
+              <Input.Password prefix={<LockOutlined />} placeholder="密码" style={{ borderRadius: 10 }} />
             </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit" loading={loading} block>登 录</Button>
+              <Button type="primary" htmlType="submit" loading={loading} block
+                className="gradient-btn" style={{ height: 46, borderRadius: 10, fontSize: 16, letterSpacing: 6 }}>
+                登 录
+              </Button>
             </Form.Item>
           </Form>
+          <div style={{ textAlign: "center", marginTop: 8 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>默认管理员：admin / admin123</Text>
+          </div>
         </Card>
       </div>
 
@@ -107,7 +156,7 @@ export default function Login() {
           ]}>
             <Input.Password placeholder="再次输入新密码" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block>确认修改</Button>
+          <Button type="primary" htmlType="submit" block className="gradient-btn">确认修改</Button>
         </Form>
       </Modal>
     </>

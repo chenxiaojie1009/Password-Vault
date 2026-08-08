@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
-import { Table, Card, Select, Typography, Space, Tag, DatePicker } from "antd";
+import { Table, Card, Select, Space, Tag, DatePicker } from "antd";
 import { HistoryOutlined, UserOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import api from "../api/client";
 
-const { Title } = Typography;
 const { RangePicker } = DatePicker;
 
 interface HistoryRecord {
@@ -48,8 +47,16 @@ export default function PasswordHistory() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
-        <Title level={4} style={{ margin: 0 }}><HistoryOutlined style={{ marginRight: 8 }} />密码修改历史</Title>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              width: 34, height: 34, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center",
+              background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", color: "#fff", boxShadow: "0 4px 12px rgba(59,130,246,0.4)",
+            }}><HistoryOutlined /></span>
+            密码修改历史
+          </div>
+        </div>
         <Space wrap>
           <Select placeholder="筛选设备" allowClear style={{ width: 160 }} value={deviceId} onChange={setDeviceId}
             options={devices.map((d) => ({ label: d.name, value: d.id }))} />
@@ -57,7 +64,7 @@ export default function PasswordHistory() {
             placeholder={["开始", "结束"]} />
         </Space>
       </div>
-      <Card>
+      <Card className="glass-card">
         <Table rowKey="id" columns={columns} dataSource={data} loading={loading} scroll={{ x: 800 }}
           pagination={{ pageSize: 15, showTotal: (t: number) => `共 ${t} 条` }}
           locale={{ emptyText: "暂无密码修改记录" }} />

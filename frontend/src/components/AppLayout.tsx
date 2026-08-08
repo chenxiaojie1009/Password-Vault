@@ -69,24 +69,65 @@ export default function AppLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider trigger={null} collapsible collapsed={collapsed} theme="dark" width={220}
+      <Sider trigger={null} collapsible collapsed={collapsed} theme="dark" width={224}
         breakpoint="lg" collapsedWidth={0} onBreakpoint={(b) => setCollapsed(b)}
-        style={{ background: 'linear-gradient(180deg, #001529 0%, #002140 100%)' }}>
-        <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-          <SettingOutlined style={{ fontSize: collapsed ? 20 : 24, color: '#1890ff' }} />
-          {!collapsed && <span style={{ color: '#fff', marginLeft: 10, fontSize: 16, fontWeight: 600, whiteSpace: 'nowrap' }}>设备管理器</span>}
+        style={{
+          background: 'linear-gradient(180deg, #0f172a 0%, #1e1b4b 55%, #312e81 100%)',
+          boxShadow: '2px 0 16px rgba(15,23,42,0.18)',
+          position: 'relative',
+          zIndex: 2,
+        }}>
+        <div style={{
+          height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 10, borderBottom: '1px solid rgba(255,255,255,0.08)',
+        }}>
+          <div style={{
+            width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+            boxShadow: '0 4px 12px rgba(59,130,246,0.5)',
+            flexShrink: 0,
+          }}>
+            <SettingOutlined style={{ fontSize: 18, color: '#fff' }} />
+          </div>
+          {!collapsed && <span style={{ color: '#fff', fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', letterSpacing: 0.5 }}>设备管理器</span>}
         </div>
-        <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} items={menuItems} onClick={({ key }) => navigate(key)} />
+        <Menu theme="dark" mode="inline" selectedKeys={[location.pathname]} items={menuItems} onClick={({ key }) => navigate(key)}
+          style={{ background: 'transparent', borderInlineEnd: 'none', paddingTop: 8 }} />
+        <div style={{
+          position: 'absolute', bottom: 16, left: 16, right: 16,
+          padding: '12px 14px', borderRadius: 12,
+          background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)',
+          backdropFilter: 'blur(6px)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'linear-gradient(135deg, #10b981, #3b82f6)', color: '#fff', fontSize: 13,
+            }}>{(user.display_name || user.username || '?').slice(0, 1).toUpperCase()}</div>
+            {!collapsed && (
+              <div style={{ overflow: 'hidden' }}>
+                <div style={{ color: '#fff', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {user.display_name || user.username}
+                </div>
+                <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>{roleLabel[user.role] || user.role}</div>
+              </div>
+            )}
+          </div>
+        </div>
       </Sider>
       <Layout>
-        <Header style={{ padding: '0 24px', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', zIndex: 1 }}>
+        <Header style={{
+          padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'rgba(255,255,255,0.82)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+          borderBottom: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 8px rgba(15,23,42,0.05)', zIndex: 1,
+        }}>
           <Button type="text" icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setCollapsed(!collapsed)} style={{ fontSize: 16 }} />
           <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenu }}>
             <Button type="text" icon={<UserOutlined />} style={{ fontSize: 14 }}>{user.display_name || user.username}</Button>
           </Dropdown>
         </Header>
-        <Content style={{ margin: isMobile ? 4 : 16, padding: isMobile ? 8 : 24, background: '#fff', borderRadius: themeToken.borderRadiusLG, minHeight: 280, overflow: 'auto' }}>
-          {authed ? <Outlet /> : null}
+        <Content style={{ margin: isMobile ? 4 : 16, padding: isMobile ? 8 : 24, borderRadius: themeToken.borderRadiusLG, minHeight: 280, overflow: 'auto' }}>
+          {authed ? <div key={location.pathname} className="page-transition"><Outlet /></div> : null}
         </Content>
       </Layout>
 
