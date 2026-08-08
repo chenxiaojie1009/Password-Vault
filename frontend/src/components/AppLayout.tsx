@@ -11,6 +11,7 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [pwdModalOpen, setPwdModalOpen] = useState(false);
   const [pwdForm] = Form.useForm();
+  const [authed, setAuthed] = useState(() => Boolean(localStorage.getItem('token')));
   const navigate = useNavigate();
   const location = useLocation();
   const screens = useBreakpoint();
@@ -20,6 +21,7 @@ export default function AppLayout() {
 
   useEffect(() => {
     if (!localStorage.getItem('token')) navigate('/login');
+    else setAuthed(true);
   }, [navigate]);
 
   const menuItems = [
@@ -84,7 +86,7 @@ export default function AppLayout() {
           </Dropdown>
         </Header>
         <Content style={{ margin: isMobile ? 4 : 16, padding: isMobile ? 8 : 24, background: '#fff', borderRadius: themeToken.borderRadiusLG, minHeight: 280, overflow: 'auto' }}>
-          <Outlet />
+          {authed ? <Outlet /> : null}
         </Content>
       </Layout>
 
