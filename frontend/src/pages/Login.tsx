@@ -120,9 +120,6 @@ export default function Login() {
               </Button>
             </Form.Item>
           </Form>
-          <div style={{ textAlign: "center", marginTop: 8 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>默认管理员：admin / admin123</Text>
-          </div>
         </Card>
       </div>
 
