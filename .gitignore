@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 *.egg-info/
 .pytest_cache/
+venv/
 
 # Node / frontend
 node_modules/
