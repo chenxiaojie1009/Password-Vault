@@ -15,12 +15,19 @@ export default function AuditLog() {
   const [data, setData] = useState<LogRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionFilter, setActionFilter] = useState<string | undefined>();
+  const [userInput, setUserInput] = useState("");
   const [userFilter, setUserFilter] = useState("");
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const screens = useBreakpoint();
   const isMobile = !screens.md;
+
+  // 输入防抖，避免每敲一个字符都请求后端
+  useEffect(() => {
+    const timer = setTimeout(() => setUserFilter(userInput.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [userInput]);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -61,8 +68,8 @@ export default function AuditLog() {
           </div>
         </div>
         <Space wrap>
-          <Input placeholder="搜索用户" prefix={<SearchOutlined />} value={userFilter}
-            onChange={(e) => setUserFilter(e.target.value)} onPressEnter={fetchLogs} style={{ width: isMobile ? 120 : 160 }} />
+          <Input placeholder="搜索用户" prefix={<SearchOutlined />} value={userInput} allowClear
+            onChange={(e) => setUserInput(e.target.value)} onPressEnter={() => setUserFilter(userInput.trim())} style={{ width: isMobile ? 120 : 160 }} />
           <Select placeholder="操作类型" allowClear style={{ width: isMobile ? 100 : 120 }} value={actionFilter} onChange={setActionFilter}
             options={Object.entries(actionLabels).map(([k, v]) => ({ label: v, value: k }))} />
           <RangePicker value={dateRange} onChange={(vals) => setDateRange(vals as [dayjs.Dayjs, dayjs.Dayjs] | null)}

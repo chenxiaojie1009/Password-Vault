@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Card, Row, Col, Table, Tag, Spin, Empty } from "antd";
+import { Card, Row, Col, Table, Tag, Spin, Empty, Alert } from "antd";
 import {
   CloudServerOutlined,
   KeyOutlined,
@@ -32,8 +32,29 @@ interface DashData {
   account_count: number;
   user_count: number;
   today_logs: number;
+  weak_password_count?: number;
   type_stats: Record<string, number>;
   recent_logs: { id: number; username: string; action: string; target_type: string; detail: string; created_at: string }[];
+}
+
+/** 数字滚动动画 */
+function AnimatedNumber({ value }: { value: number }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    const target = value || 0;
+    const duration = 800;
+    const start = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setDisplay(Math.round(target * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{display}</>;
 }
 
 export default function Dashboard() {
@@ -91,6 +112,16 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {(data?.weak_password_count ?? 0) > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16, borderRadius: 12 }}
+          message={`发现 ${data?.weak_password_count} 个弱密码账户`}
+          description="建议尽快将这些账户的密码修改为强密码（至少 8 位，包含大小写字母、数字与特殊字符）。"
+        />
+      )}
+
       <Row gutter={[16, 16]} className="stagger">
         {stats.map((s) => (
           <Col xs={24} sm={12} lg={6} key={s.title}>
@@ -98,7 +129,7 @@ export default function Dashboard() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div>
                   <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 6 }}>{s.title}</div>
-                  <div className="stat-value" style={{ fontSize: 32, lineHeight: 1 }}>{s.value}</div>
+                  <div className="stat-value" style={{ fontSize: 32, lineHeight: 1 }}><AnimatedNumber value={s.value} /></div>
                 </div>
                 <div style={{
                   width: 52, height: 52, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center",

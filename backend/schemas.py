@@ -25,7 +25,8 @@ class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 class PasswordStrengthResult(BaseModel): score: int; level: str; feedback: str
-class ChangePasswordRequest(BaseModel): old_password: str; new_password: str = Field(min_length=6)
+class ChangePasswordRequest(BaseModel): old_password: str; new_password: str = Field(min_length=6, max_length=128)
+class ResetPasswordRequest(BaseModel): new_password: str = Field(min_length=6, max_length=128)
 
 class IPCreate(BaseModel): address: str = Field(min_length=1, max_length=64); label: str = ""
 class MACCreate(BaseModel): address: str = Field(min_length=1, max_length=32); label: str = ""

@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Modal, Descriptions, Table, Tag, Typography, Button, Space, message } from "antd";
-import { EyeOutlined, EditOutlined, EyeInvisibleOutlined, DownloadOutlined } from "@ant-design/icons";
+import { EyeOutlined, EditOutlined, EyeInvisibleOutlined, DownloadOutlined, CopyOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client";
+import { copyText } from "../utils";
 
 const { Title, Text } = Typography;
 const typeColors: Record<string, string> = { "服务器": "blue", "交换机": "green", "纵加设备": "orange", "路由器": "purple", "防火墙": "red", "存储设备": "cyan", "其他": "default" };
@@ -55,6 +56,10 @@ export default function DeviceModal({ open, detailId, editId, onClose }: Props) 
           <Button type="text" size="small"
             icon={showPwd[record.id] ? <EyeInvisibleOutlined /> : <EyeOutlined />}
             onClick={() => togglePwd(record.id)} />
+          <Button type="text" size="small" icon={<CopyOutlined />} title="复制密码"
+            onClick={async () => {
+              (await copyText(pwd || "")) ? message.success("密码已复制") : message.error("复制失败");
+            }} />
         </Space>
       ),
     },

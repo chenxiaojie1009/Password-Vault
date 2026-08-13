@@ -2,6 +2,7 @@
 Password Manager Backend - FastAPI
 """
 import os, sys, re, io, shutil, uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -9,7 +10,7 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query, Re
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, select
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Base directory: works both in dev and PyInstaller bundle
@@ -37,7 +38,7 @@ from schemas import (
     IPCreate, IPResponse, MACCreate, MACResponse,
     PasswordHistoryResponse, AuditLogResponse,
     PasswordStrengthResult, BatchImportResult, BackupInfo, ExportRequest, ChangePasswordRequest,
-    UserUpdate, DeviceFileResponse, DeviceFileUploadResult,
+    ResetPasswordRequest, UserUpdate, DeviceFileResponse, DeviceFileUploadResult,
 )
 from auth import (
     hash_password, verify_password, encrypt_password, decrypt_password,
@@ -73,11 +74,27 @@ def check_level_access(device_level: str, current_user: User, hidden: bool = Fal
             raise HTTPException(status_code=404, detail="设备不存在")
         raise HTTPException(status_code=403, detail="无权操作该等级设备")
 
-app = FastAPI(title="Password Manager", version="1.1.0")
+scheduler = BackgroundScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 初始化默认管理员（若不存在）
+    db = next(get_db())
+    try:
+        init_admin(db)
+    finally:
+        db.close()
+    # 每天凌晨 2:00 自动备份
+    scheduler.add_job(perform_backup, "cron", hour=2, minute=0, id="daily_backup")
+    scheduler.start()
+    yield
+    scheduler.shutdown()
+
+
+app = FastAPI(title="Password Manager", version="1.2.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 Base.metadata.create_all(bind=engine)
-
-scheduler = BackgroundScheduler()
 BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
@@ -135,13 +152,14 @@ def check_password_strength(password: str) -> PasswordStrengthResult:
 
 # ---- Auth ----
 @app.post("/api/auth/login", response_model=TokenResponse)
-def login(body: LoginRequest, db: Session = Depends(get_db)):
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == body.username).first()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     if not user.is_active: raise HTTPException(status_code=403, detail="账户已禁用")
     token = create_access_token(data={"sub": user.id})
-    write_audit(db, user.id, "login", "system", detail=f"用户 {user.username} 登录")
+    write_audit(db, user.id, "login", "system", detail=f"用户 {user.username} 登录",
+                ip_address=request.client.host if request.client else "")
     return TokenResponse(access_token=token, username=user.username,
                          display_name=user.display_name or user.username, role=user.role,
                          must_change_password=user.must_change_password)
@@ -205,11 +223,11 @@ def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db),
     return u
 
 @app.put("/api/users/{user_id}/reset-password")
-def reset_user_password(user_id: int, body: dict, db: Session = Depends(get_db),
+def reset_user_password(user_id: int, body: ResetPasswordRequest, db: Session = Depends(get_db),
                         admin_user: User = Depends(require_admin)):
     u = db.query(User).filter(User.id == user_id).first()
     if not u: raise HTTPException(status_code=404, detail="用户不存在")
-    u.password_hash = hash_password(body["new_password"])
+    u.password_hash = hash_password(body.new_password)
     u.must_change_password = True
     db.commit()
     write_audit(db, admin_user.id, "reset_password", "user", u.id, f"重置用户 {u.username} 密码")
@@ -351,7 +369,17 @@ def list_devices(keyword: str = Query(""), device_type: str = Query(""),
     q = _visible_devices_query(db, current_user)
     if keyword:
         kw = f"%{keyword}%"
-        q = q.filter(Device.name.contains(kw) | Device.notes.contains(kw) | Device.location.contains(kw))
+        ip_dev_ids = select(DeviceIP.device_id).where(DeviceIP.address.contains(kw))
+        mac_dev_ids = select(DeviceMAC.device_id).where(DeviceMAC.address.contains(kw))
+        acct_dev_ids = select(DeviceAccount.device_id).where(DeviceAccount.username.contains(kw))
+        q = q.filter(
+            Device.name.contains(kw)
+            | Device.notes.contains(kw)
+            | Device.location.contains(kw)
+            | Device.id.in_(ip_dev_ids)
+            | Device.id.in_(mac_dev_ids)
+            | Device.id.in_(acct_dev_ids)
+        )
     if device_type: q = q.filter(Device.device_type == device_type)
 
     total = q.count(); devices = q.order_by(Device.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
@@ -688,15 +716,15 @@ def list_all_password_history(device_id: int = Query(None), start_date: str = Qu
     q = db.query(PasswordHistory)
     # Filter by device visibility + level for viewer/editor
     if current_user.role in ("viewer", "editor"):
-        vis_dev = db.query(Device.id).filter(Device.is_network_involved == False).subquery()
-        vis_acc = db.query(DeviceAccount.id).filter(DeviceAccount.device_id.in_(vis_dev)).subquery()
+        vis_dev = select(Device.id).where(Device.is_network_involved == False)
+        vis_acc = select(DeviceAccount.id).where(DeviceAccount.device_id.in_(vis_dev))
         q = q.filter(PasswordHistory.account_id.in_(vis_acc))
     # Level-based filtering: role can only see history of devices up to its max level
-    lvl_dev = db.query(Device.id).filter(Device.device_level.in_(allowed_levels(current_user.role))).subquery()
-    lvl_acc = db.query(DeviceAccount.id).filter(DeviceAccount.device_id.in_(lvl_dev)).subquery()
+    lvl_dev = select(Device.id).where(Device.device_level.in_(allowed_levels(current_user.role)))
+    lvl_acc = select(DeviceAccount.id).where(DeviceAccount.device_id.in_(lvl_dev))
     q = q.filter(PasswordHistory.account_id.in_(lvl_acc))
     if device_id:
-        subq = db.query(DeviceAccount.id).filter(DeviceAccount.device_id == device_id).subquery()
+        subq = select(DeviceAccount.id).where(DeviceAccount.device_id == device_id)
         q = q.filter(PasswordHistory.account_id.in_(subq))
     if start_date:
         try: q = q.filter(PasswordHistory.changed_at >= datetime.fromisoformat(start_date))
@@ -896,7 +924,7 @@ async def import_devices_xlsx(request: Request, file: UploadFile = File(...),
     return result
 
 @app.get("/api/import/template")
-def download_import_template():
+def download_import_template(_: User = Depends(get_current_user)):
     try: import openpyxl
     except ImportError: raise HTTPException(status_code=500, detail="openpyxl 未安装")
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "导入模板"
@@ -967,8 +995,10 @@ def create_backup(_: User = Depends(require_admin)): perform_backup(); return {"
 
 @app.get("/api/backups/download/{filename}")
 def download_backup(filename: str, _: User = Depends(require_admin)):
+    filename = os.path.basename(filename)
     bp = os.path.join(BACKUP_DIR, filename)
-    if not os.path.exists(bp): raise HTTPException(status_code=404, detail="备份不存在")
+    if not filename.endswith(".db") or not os.path.exists(bp):
+        raise HTTPException(status_code=404, detail="备份不存在")
     return FileResponse(bp, filename=filename, media_type="application/octet-stream")
 
 @app.post("/api/backups/restore")
@@ -986,8 +1016,10 @@ async def restore_upload(file: UploadFile = File(...), db: Session = Depends(get
 
 @app.post("/api/backups/{filename}/restore")
 def restore_backup(filename: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    filename = os.path.basename(filename)
     bp = os.path.join(BACKUP_DIR, filename)
-    if not os.path.exists(bp): raise HTTPException(status_code=404, detail="备份不存在")
+    if not filename.endswith(".db") or not os.path.exists(bp):
+        raise HTTPException(status_code=404, detail="备份不存在")
     perform_backup(); engine.dispose()
     shutil.copy2(bp, os.path.join(BASE_DIR, "device_manager.db"))
     Base.metadata.create_all(bind=engine)
@@ -1018,21 +1050,20 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
             "action": l.action, "target_type": l.target_type,
             "detail": l.detail, "created_at": l.created_at.isoformat() if l.created_at else "",
         } for l in recent]
+    # 弱密码账户统计（对可见设备账户解密后评分）
+    weak_count = 0
+    acct_rows = db.query(DeviceAccount.password_encrypted).filter(
+        DeviceAccount.device_id.in_(db.query(vis.c.id))
+    ).all()
+    for (enc,) in acct_rows:
+        try:
+            if check_password_strength(decrypt_password(enc)).level == "weak":
+                weak_count += 1
+        except Exception:
+            continue
     return {"device_count": dc, "account_count": ac, "user_count": uc,
-            "today_logs": tl, "type_stats": ts, "recent_logs": recent_logs}
-
-
-# ---- Lifecycle ----
-@app.on_event("startup")
-def startup():
-    db = next(get_db())
-    try: init_admin(db)
-    finally: db.close()
-    scheduler.add_job(perform_backup, "cron", hour=2, minute=0, id="daily_backup")
-    scheduler.start()
-
-@app.on_event("shutdown")
-def shutdown(): scheduler.shutdown()
+            "today_logs": tl, "type_stats": ts, "recent_logs": recent_logs,
+            "weak_password_count": weak_count}
 
 
 # ---- Static files ----

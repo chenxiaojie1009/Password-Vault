@@ -58,14 +58,17 @@ export default function DeviceList() {
     catch { message.error("删除失败"); }
   };
 
-  const handleExport = async () => {
+  const handleExport = async (ids?: React.Key[]) => {
     try {
-      const res = await api.post("/export", { format: "xlsx" }, { responseType: "blob" });
+      const res = await api.post("/export", {
+        format: "xlsx",
+        device_ids: ids && ids.length ? ids.map(Number) : undefined,
+      }, { responseType: "blob" });
       const url = URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement("a"); a.href = url;
       a.download = "设备列表_" + new Date().toISOString().slice(0, 10) + ".xlsx";
       a.click(); URL.revokeObjectURL(url);
-      message.success("导出成功");
+      message.success(ids && ids.length ? `已导出 ${ids.length} 台选中设备` : "导出成功");
     } catch { message.error("导出失败"); }
   };
 
@@ -141,7 +144,10 @@ export default function DeviceList() {
           <Space>
             {canEdit && <Button icon={<ImportOutlined />} onClick={handleImport}>批量导入</Button>}
             <Button type="primary" className="gradient-btn" icon={<PlusOutlined />} onClick={() => navigate("/devices/new")}>添加设备</Button>
-            <Button icon={<ExportOutlined />} onClick={handleExport}>导出</Button>
+            {selectedKeys.length > 0 && (
+              <Button icon={<ExportOutlined />} onClick={() => handleExport(selectedKeys)}>导出选中 ({selectedKeys.length})</Button>
+            )}
+            <Button icon={<ExportOutlined />} onClick={() => handleExport()}>导出</Button>
           </Space>
         </Space>
       </Card>

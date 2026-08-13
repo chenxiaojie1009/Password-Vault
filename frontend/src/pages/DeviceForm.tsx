@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Card, Form, Input, Select, Button, Space, Divider, message, Popconfirm, Typography, Switch, Upload, Tag } from "antd";
+import { Card, Form, Input, Select, Button, Space, Divider, message, Popconfirm, Typography, Switch, Upload, Tag, Tooltip } from "antd";
 const { Dragger } = Upload;
-import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, InboxOutlined, DownloadOutlined, EditOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, InboxOutlined, DownloadOutlined, EditOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import api from "../api/client";
+import { generatePassword } from "../utils";
 
 const { Title } = Typography;
 const DEFAULT_TYPES = ["服务器", "交换机", "纵加设备", "路由器", "防火墙", "存储设备", "工作站", "其他"];
@@ -253,6 +254,11 @@ export default function DeviceForm() {
                     </Form.Item>
                     <Form.Item {...rest} name={[name, "password"]} label="密码" rules={[{ required: !isEdit }]}>
                       <Input.Password placeholder={isEdit ? "留空则不修改" : "输入密码"} style={{ width: 170 }} />
+                    </Form.Item>
+                    <Form.Item label=" ">
+                      <Tooltip title="生成强密码">
+                        <Button icon={<ThunderboltOutlined />} onClick={() => form.setFieldValue(["accounts", name, "password"], generatePassword())} />
+                      </Tooltip>
                     </Form.Item>
                     <Form.Item {...rest} name={[name, "notes"]} label="备注">
                       <Input placeholder="可选" style={{ width: 140 }} />

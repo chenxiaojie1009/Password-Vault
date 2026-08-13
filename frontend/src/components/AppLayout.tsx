@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Button, Dropdown, Modal, Form, Input, theme, message, Grid } from 'antd';
+import { Layout, Menu, Button, Dropdown, Modal, Form, Input, theme, message, Grid, Tooltip } from 'antd';
 const { useBreakpoint } = Grid;
-import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined, CloudServerOutlined, AppstoreOutlined } from '@ant-design/icons';
+import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined, CloudServerOutlined, AppstoreOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import api from '../api/client';
+import { generatePassword } from '../utils';
 import PasswordStrengthMeter from './PasswordStrengthMeter';
 
 const { Header, Sider, Content } = Layout;
@@ -139,7 +140,19 @@ export default function AppLayout() {
           <Form.Item name="old_password" label="当前密码" rules={[{ required: true, message: '请输入当前密码' }]}>
             <Input.Password placeholder="输入当前密码" />
           </Form.Item>
-          <Form.Item name="new_password" label="新密码" rules={[
+          <Form.Item name="new_password" label={
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              新密码
+              <Tooltip title="生成强密码">
+                <Button size="small" type="link" icon={<ThunderboltOutlined />} style={{ padding: 0 }}
+                  onClick={() => {
+                    const pwd = generatePassword();
+                    pwdForm.setFieldValue('new_password', pwd);
+                    pwdForm.setFieldValue('confirm', pwd);
+                  }} />
+              </Tooltip>
+            </span>
+          } rules={[
             { required: true, min: 6, message: '至少6位' },
             ({ getFieldValue }) => ({
               validator(_, value) {
