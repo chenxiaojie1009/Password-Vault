@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card, Form, Input, Button, Typography, message, Modal } from "antd";
 import { UserOutlined, LockOutlined, SafetyOutlined } from "@ant-design/icons";
 import api from "../api/client";
+import PasswordStrengthMeter from "../components/PasswordStrengthMeter";
 
 const { Title, Text } = Typography;
 
@@ -11,7 +12,9 @@ export default function Login() {
   const [changePwdOpen, setChangePwdOpen] = useState(false);
   const [loginUser, setLoginUser] = useState({ username: "", display_name: "" });
   const [form] = Form.useForm();
+  const [changePwdForm] = Form.useForm();
   const navigate = useNavigate();
+  const newPwd = Form.useWatch("new_password", changePwdForm);
 
   const doLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
@@ -127,7 +130,7 @@ export default function Login() {
         <div style={{ marginBottom: 16 }}>
           <Text>欢迎 <strong>{loginUser.display_name || loginUser.username}</strong>，首次登录请修改默认密码：</Text>
         </div>
-        <Form onFinish={handleChangePassword} layout="vertical">
+        <Form onFinish={handleChangePassword} form={changePwdForm} layout="vertical">
           <Form.Item name="old_password" label="当前密码" rules={[{ required: true, message: "请输入当前密码" }]}>
             <Input.Password placeholder="admin123" />
           </Form.Item>
@@ -142,6 +145,7 @@ export default function Login() {
           ]}>
             <Input.Password placeholder="输入新密码（至少6位）" />
           </Form.Item>
+          <PasswordStrengthMeter password={newPwd || ""} />
           <Form.Item name="confirm" dependencies={["new_password"]} label="确认新密码" rules={[
             { required: true },
             ({ getFieldValue }) => ({

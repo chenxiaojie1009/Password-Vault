@@ -119,7 +119,7 @@ export default function DeviceForm() {
           } catch { message.warning("文件上传失败"); }
         }
       }
-      navigate("/");
+      navigate("/devices");
     } catch (err: any) {
       message.error(err.response?.data?.detail || "保存失败");
     } finally {
@@ -157,7 +157,7 @@ export default function DeviceForm() {
   return (
     <div style={{ maxWidth: "100%", width: "100%", padding: "0 8px", margin: "0 auto" }} className="page-transition">
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/")}>返回</Button>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/devices")}>返回</Button>
         <div style={{ fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{
             width: 34, height: 34, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -350,7 +350,7 @@ export default function DeviceForm() {
           </Form.Item>
           <Space>
             <Button type="primary" className="gradient-btn" htmlType="submit" loading={saving}>{isEdit ? "保存修改" : "创建设备"}</Button>
-            <Button onClick={() => navigate("/")}>取消</Button>
+            <Button onClick={() => navigate("/devices")}>取消</Button>
           </Space>
         </Form>
       </Card>

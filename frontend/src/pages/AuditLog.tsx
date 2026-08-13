@@ -6,8 +6,8 @@ import dayjs from "dayjs";
 import api from "../api/client";
 
 const { RangePicker } = DatePicker;
-const actionColors: Record<string, string> = { create: "green", update: "blue", delete: "red", export: "orange", import: "purple", login: "cyan" };
-const actionLabels: Record<string, string> = { create: "创建", update: "修改", delete: "删除", export: "导出", import: "导入", login: "登录" };
+const actionColors: Record<string, string> = { create: "green", update: "blue", delete: "red", export: "orange", import: "purple", login: "cyan", change_password: "geekblue", upload: "blue", create_user: "green", update_user: "blue", delete_user: "red", reset_password: "orange" };
+const actionLabels: Record<string, string> = { create: "创建", update: "修改", delete: "删除", export: "导出", import: "导入", login: "登录", change_password: "改密", upload: "上传", create_user: "创建用户", update_user: "更新用户", delete_user: "删除用户", reset_password: "重置密码" };
 
 interface LogRecord { id: number; username: string; action: string; target_type: string; target_id: number | null; detail: string; ip_address: string; created_at: string; }
 
@@ -18,6 +18,7 @@ export default function AuditLog() {
   const [userFilter, setUserFilter] = useState("");
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const screens = useBreakpoint();
   const isMobile = !screens.md;
 
@@ -26,13 +27,17 @@ export default function AuditLog() {
     try {
       const params: any = { page, page_size: 15 };
       if (actionFilter) params.action = actionFilter;
-      if (userFilter) params.user_id = userFilter || undefined;
-      if (dateRange) { params.start_date = dateRange[0].toISOString(); params.end_date = dateRange[1].toISOString(); }
+      if (userFilter) params.username = userFilter;
+      if (dateRange) {
+        params.start_date = dateRange[0].format("YYYY-MM-DD 00:00:00");
+        params.end_date = dateRange[1].format("YYYY-MM-DD 23:59:59");
+      }
       const res = await api.get("/audit-logs", { params });
       setData(res.data || []);
+      setTotal(Number(res.headers["x-total-count"] || 0));
     } catch { setData([]); } finally { setLoading(false); }
   };
-  useEffect(() => { fetchLogs(); }, [page, actionFilter, dateRange]);
+  useEffect(() => { fetchLogs(); }, [page, actionFilter, dateRange, userFilter]);
 
   const columns = [
     { title: "时间", dataIndex: "created_at", width: 180, render: (v: string) => dayjs(v).format("YYYY-MM-DD HH:mm:ss") },
@@ -66,7 +71,7 @@ export default function AuditLog() {
       </div>
       <Card className="glass-card">
         <Table rowKey="id" columns={columns} dataSource={data} loading={loading} scroll={{ x: 700 }}
-          pagination={{ current: page, pageSize: 15, showTotal: (t: number) => `共 ${t} 条`, onChange: (p) => setPage(p) }}
+          pagination={{ current: page, pageSize: 15, total, showTotal: (t: number) => `共 ${t} 条`, onChange: (p) => setPage(p) }}
           locale={{ emptyText: "暂无操作日志" }} />
       </Card>
     </div>

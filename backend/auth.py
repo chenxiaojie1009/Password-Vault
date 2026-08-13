@@ -1,4 +1,5 @@
 """认证与权限模块"""
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
@@ -11,7 +12,8 @@ from database import get_db
 from models import User, beijing_now
 import base64, hashlib
 
-SECRET_KEY = "device-manager-secret-change-in-production"
+# 允许通过环境变量覆盖密钥；生产环境应设置 DM_SECRET_KEY
+SECRET_KEY = os.environ.get("DM_SECRET_KEY", "device-manager-secret-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480
 

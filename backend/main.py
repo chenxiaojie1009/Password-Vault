@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -330,23 +330,29 @@ def _sync_ips_macs(device: Device, ips: list, macs: list, db: Session):
         for mac in macs: db.add(DeviceMAC(device_id=device.id, address=mac.address, label=mac.label))
 
 
+def _visible_devices_query(db: Session, current_user: User):
+    """Return a device query filtered by the current user's role visibility.
+
+    - viewer/editor: only non-network-involved devices
+    - every role: only devices up to its max level
+    """
+    q = db.query(Device)
+    if current_user.role in ("viewer", "editor"):
+        q = q.filter(Device.is_network_involved == False)
+    q = q.filter(Device.device_level.in_(allowed_levels(current_user.role)))
+    return q
+
+
 # ---- Devices ----
 @app.get("/api/devices")
 def list_devices(keyword: str = Query(""), device_type: str = Query(""),
                  page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    q = db.query(Device)
+    q = _visible_devices_query(db, current_user)
     if keyword:
         kw = f"%{keyword}%"
         q = q.filter(Device.name.contains(kw) | Device.notes.contains(kw) | Device.location.contains(kw))
     if device_type: q = q.filter(Device.device_type == device_type)
-    # Network-based filtering:
-    # - viewer/editor: only non-network-involved devices
-    # - operator/admin: all devices
-    if current_user.role in ("viewer", "editor"):
-        q = q.filter(Device.is_network_involved == False)
-    # Level-based filtering: each role can only see devices up to its max level
-    q = q.filter(Device.device_level.in_(allowed_levels(current_user.role)))
 
     total = q.count(); devices = q.order_by(Device.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"items": [DeviceListItem(
@@ -490,10 +496,13 @@ def update_account_password(account_id: int, body: DeviceAccountCreate, request:
     if not a: raise HTTPException(status_code=404, detail="账号不存在")
     _check_account_device_access(a, db, current_user)
     old_enc = a.password_encrypted
+    old_plain = ""
+    try: old_plain = decrypt_password(old_enc)
+    except Exception: old_plain = ""
     a.password_encrypted = encrypt_password(body.password)
     a.notes = body.notes if body.notes else a.notes
     a.updated_at = beijing_now()
-    db.add(PasswordHistory(account_id=a.id, old_password_hash=old_enc, old_password=body.password, changed_by=current_user.id,
+    db.add(PasswordHistory(account_id=a.id, old_password_hash=old_enc, old_password=old_plain, changed_by=current_user.id,
            reason=body.notes or "密码变更"))
     db.commit(); db.refresh(a)
     write_audit(db, current_user.id, "update", "account", a.id,
@@ -701,20 +710,27 @@ def list_all_password_history(device_id: int = Query(None), start_date: str = Qu
 
 # ---- Audit Logs ----
 @app.get("/api/audit-logs", response_model=List[AuditLogResponse])
-def list_audit_logs(action: str = Query(""), user_id: int = Query(None),
+def list_audit_logs(action: str = Query(""), user_id: int = Query(None), username: str = Query(""),
                     start_date: str = Query(""), end_date: str = Query(""),
                     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+                    response: Response = None,
                     db: Session = Depends(get_db), _: User = Depends(require_admin)):
     q = db.query(AuditLog)
     if action: q = q.filter(AuditLog.action == action)
     if user_id: q = q.filter(AuditLog.user_id == user_id)
+    if username:
+        sub = db.query(User.id).filter(User.username.contains(username)).scalar_subquery()
+        q = q.filter(AuditLog.user_id.in_(sub))
     if start_date:
         try: q = q.filter(AuditLog.created_at >= datetime.fromisoformat(start_date))
         except ValueError: pass
     if end_date:
         try: q = q.filter(AuditLog.created_at <= datetime.fromisoformat(end_date))
         except ValueError: pass
+    total = q.count()
     logs = q.order_by(AuditLog.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    if response is not None:
+        response.headers["X-Total-Count"] = str(total)
     return [AuditLogResponse(id=l.id, username=l.user.username if l.user else "",
             action=l.action, target_type=l.target_type, target_id=l.target_id,
             detail=l.detail, ip_address=l.ip_address, created_at=l.created_at) for l in logs]
@@ -727,7 +743,7 @@ def export_devices(body: ExportRequest, request: Request, db: Session = Depends(
     try: import openpyxl; from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     except ImportError: raise HTTPException(status_code=500, detail="openpyxl 未安装")
     try:
-        q = db.query(Device)
+        q = _visible_devices_query(db, current_user)
         if body.device_ids: q = q.filter(Device.id.in_(body.device_ids))
         devices = q.order_by(Device.name).all()
         wb = openpyxl.Workbook(); ws = wb.active; ws.title = "密码列表"
@@ -898,7 +914,21 @@ def perform_backup():
     db_path = os.path.join(BASE_DIR, "device_manager.db")
     if not os.path.exists(db_path): return
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-    shutil.copy2(db_path, os.path.join(BACKUP_DIR, f"backup_{ts}.db"))
+    dest = os.path.join(BACKUP_DIR, f"backup_{ts}.db")
+    # Use SQLite's online backup API for a consistent snapshot (safe under concurrent writes).
+    try:
+        import sqlite3
+        src = sqlite3.connect(db_path)
+        try:
+            dst = sqlite3.connect(dest)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+    except Exception:
+        shutil.copy2(db_path, dest)
     # Also backup uploads directory if it exists and has content
     if os.path.exists(UPLOAD_DIR) and os.listdir(UPLOAD_DIR):
         uploads_backup = os.path.join(BACKUP_DIR, f"uploads_{ts}.zip")
@@ -909,6 +939,11 @@ def perform_backup():
         old_files = sorted([f for f in os.listdir(BACKUP_DIR) if f.startswith(prefix) and f.endswith(ext)], reverse=True)
         for old in old_files[30:]:
             os.remove(os.path.join(BACKUP_DIR, old))
+
+
+def _is_sqlite_file(contents: bytes) -> bool:
+    """Basic SQLite file validation via magic header."""
+    return len(contents) >= 16 and contents[:16] == b"SQLite format 3\x00"
 
 
 def _restore_uploads_from_backup(ts: str):
@@ -939,9 +974,11 @@ def download_backup(filename: str, _: User = Depends(require_admin)):
 @app.post("/api/backups/restore")
 async def restore_upload(file: UploadFile = File(...), db: Session = Depends(get_db), _: User = Depends(require_admin)):
     """Manual restore from uploaded .db file"""
+    contents = await file.read()
+    if not _is_sqlite_file(contents):
+        raise HTTPException(status_code=400, detail="无效的备份文件：不是有效的 SQLite 数据库")
     perform_backup()  # auto-backup current state first
     engine.dispose()
-    contents = await file.read()
     with open(os.path.join(BASE_DIR, "device_manager.db"), "wb") as f:
         f.write(contents)
     Base.metadata.create_all(bind=engine)
@@ -962,16 +999,27 @@ def restore_backup(filename: str, db: Session = Depends(get_db), _: User = Depen
 
 # ---- Dashboard ----
 @app.get("/api/dashboard")
-def get_dashboard(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    dc = db.query(func.count(Device.id)).scalar() or 0
-    ac = db.query(func.count(DeviceAccount.id)).scalar() or 0
+def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    vis = _visible_devices_query(db, current_user).subquery()
+    dc = db.query(func.count(vis.c.id)).scalar() or 0
+    ac = db.query(func.count(DeviceAccount.id)).filter(DeviceAccount.device_id.in_(db.query(vis.c.id))).scalar() or 0
     uc = db.query(func.count(User.id)).scalar() or 0
     today = beijing_now().replace(hour=0, minute=0, second=0, microsecond=0)
     tl = db.query(func.count(AuditLog.id)).filter(AuditLog.created_at >= today).scalar() or 0
     ts = {}
-    for t, c in db.query(Device.device_type, func.count(Device.id)).group_by(Device.device_type).all():
+    for t, c in db.query(Device.device_type, func.count(Device.id)).filter(Device.id.in_(db.query(vis.c.id))).group_by(Device.device_type).all():
         ts[str(t)] = c
-    return {"device_count": dc, "account_count": ac, "user_count": uc, "today_logs": tl, "type_stats": ts}
+    # Recent activity (audit details are admin-only)
+    recent_logs = []
+    if current_user.role == "admin":
+        recent = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(8).all()
+        recent_logs = [{
+            "id": l.id, "username": l.user.username if l.user else "",
+            "action": l.action, "target_type": l.target_type,
+            "detail": l.detail, "created_at": l.created_at.isoformat() if l.created_at else "",
+        } for l in recent]
+    return {"device_count": dc, "account_count": ac, "user_count": uc,
+            "today_logs": tl, "type_stats": ts, "recent_logs": recent_logs}
 
 
 # ---- Lifecycle ----

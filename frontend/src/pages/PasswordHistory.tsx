@@ -27,7 +27,10 @@ export default function PasswordHistory() {
     try {
       const params: any = { page_size: 200 };
       if (deviceId) params.device_id = deviceId;
-      if (dateRange) { params.start_date = dateRange[0].toISOString(); params.end_date = dateRange[1].toISOString(); }
+      if (dateRange) {
+        params.start_date = dateRange[0].format("YYYY-MM-DD 00:00:00");
+        params.end_date = dateRange[1].format("YYYY-MM-DD 23:59:59");
+      }
       const res = await api.get("/password-history", { params });
       setData(res.data || []);
     } catch { setData([]); } finally { setLoading(false); }

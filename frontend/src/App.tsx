@@ -3,6 +3,7 @@ import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import AppLayout from './components/AppLayout';
 import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
 import DeviceList from './pages/DeviceList';
 import DeviceForm from './pages/DeviceForm';
 import PasswordHistory from './pages/PasswordHistory';
@@ -62,7 +63,8 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<AppLayout />}>
-            <Route path="/" element={<DeviceList />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/devices" element={<DeviceList />} />
             <Route path="/devices/new" element={<DeviceForm />} />
             <Route path="/devices/:id/edit" element={<DeviceForm />} />
             <Route path="/history" element={<PasswordHistory />} />

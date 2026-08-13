@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Button, Dropdown, Modal, Form, Input, theme, message, Grid } from 'antd';
 const { useBreakpoint } = Grid;
-import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined, CloudServerOutlined, AppstoreOutlined } from '@ant-design/icons';
 import api from '../api/client';
+import PasswordStrengthMeter from './PasswordStrengthMeter';
 
 const { Header, Sider, Content } = Layout;
 
@@ -18,6 +19,7 @@ export default function AppLayout() {
   const isMobile = !screens.md;
   const { token: themeToken } = theme.useToken();
   const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const newPwd = Form.useWatch('new_password', pwdForm);
 
   useEffect(() => {
     if (!localStorage.getItem('token')) navigate('/login');
@@ -25,7 +27,8 @@ export default function AppLayout() {
   }, [navigate]);
 
   const menuItems = [
-    { key: '/', icon: <DashboardOutlined />, label: '设备列表' },
+    { key: '/', icon: <DashboardOutlined />, label: '数据概览' },
+    { key: '/devices', icon: <AppstoreOutlined />, label: '设备列表' },
     { key: '/history', icon: <HistoryOutlined />, label: '密码历史' },
     ...(user.role === 'admin' ? [
       { key: '/audit', icon: <AuditOutlined />, label: '审计日志' },
@@ -147,6 +150,7 @@ export default function AppLayout() {
           ]}>
             <Input.Password placeholder="输入新密码（至少6位）" />
           </Form.Item>
+          <PasswordStrengthMeter password={newPwd || ''} />
           <Form.Item name="confirm" dependencies={['new_password']} label="确认新密码" rules={[
             { required: true },
             ({ getFieldValue }) => ({
