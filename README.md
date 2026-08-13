@@ -32,8 +32,9 @@
 - 📁 **历史管理** — 查看/还原/下载所有历史备份
 
 ### 其他
+- 📊 **数据概览** — 首页仪表盘：设备/账号/用户/今日操作统计 + 类型分布 + 最近活动（管理员可见）
 - 🔒 **首次改密** — 新用户首次登录强制修改默认密码
-- 🛡️ **密码强度** — 5 维度评分（长度/大小写/数字/特殊字符）
+- 🛡️ **密码强度** — 5 维度评分（长度/大小写/数字/特殊字符），修改密码时实时显示强度条
 - 📱 **移动端适配** — PWA 支持，手机添加到主屏幕，小屏自动切换卡片布局
 - 🕐 **北京时间** — 所有时间戳使用 UTC+8
 
@@ -83,13 +84,14 @@ device-manager/
 │   ├── src/
 │   │   ├── pages/
 │   │   │   ├── Login.tsx           # 登录 + 首次改密
+│   │   │   ├── Dashboard.tsx       # 数据概览仪表盘（首页）
 │   │   │   ├── DeviceList.tsx      # 设备列表（表格/卡片）
 │   │   │   ├── DeviceForm.tsx      # 添加/编辑设备（含文件上传）
 │   │   │   ├── PasswordHistory.tsx # 密码历史（含旧密码）
 │   │   │   ├── AuditLog.tsx        # 审计日志
 │   │   │   ├── UserManagement.tsx  # 用户管理（导入/导出）
 │   │   │   └── BackupRestore.tsx   # 备份与还原
-│   │   ├── components/       # AppLayout, DeviceModal
+│   │   ├── components/       # AppLayout, DeviceModal, PasswordStrengthMeter
 │   │   └── api/              # Axios 封装
 │   └── public/               # icon.png, manifest.json
 └── deploy/                   # 一键部署包
@@ -115,6 +117,8 @@ npm run dev                 # → http://localhost:3000
 cd backend
 python -m pytest tests/ -v  # 81 passed
 ```
+
+> 生产部署建议通过环境变量 `DM_SECRET_KEY` 覆盖默认 JWT/设备密码加密密钥。
 
 ## 📦 打包
 
@@ -162,7 +166,8 @@ pyinstaller DeviceManager.spec
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/password-history` | 密码历史（权限过滤） |
-| GET | `/api/audit-logs` | 审计日志 |
+| GET | `/api/audit-logs` | 审计日志（支持用户名/操作/日期筛选，返回 X-Total-Count） |
+| GET | `/api/dashboard` | 数据概览统计（按角色过滤 + 最近活动） |
 
 ### 备份与还原
 | 方法 | 路径 | 说明 |
