@@ -1,0 +1,254 @@
+package com.device.manager;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.os.Bundle;
+import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.Window;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
+
+/**
+ * 设备管理器 - Android APK 封装
+ *
+ * 以 WebView 加载局域网内的设备管理器服务器（http://<服务器IP>:8000），
+ * 首次启动可配置服务器地址，之后自动连接。
+ */
+public class MainActivity extends Activity {
+
+    private static final String PREFS_NAME = "device_manager_prefs";
+    private static final String KEY_SERVER_URL = "server_url";
+
+    private WebView webView;
+    private ProgressBar progressBar;
+    private TextView errorView;
+    private FrameLayout container;
+    private SharedPreferences prefs;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        buildUi();
+
+        String saved = prefs.getString(KEY_SERVER_URL, "");
+        if (saved == null || saved.trim().isEmpty()) {
+            showServerDialog(true);
+        } else {
+            loadUrl(normalizeUrl(saved.trim()));
+        }
+    }
+
+    private void buildUi() {
+        container = new FrameLayout(this);
+
+        // WebView
+        webView = new WebView(this);
+        WebSettings s = webView.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setAllowFileAccess(false);
+        s.setAllowContentAccess(false);
+        s.setLoadWithOverviewMode(true);
+        s.setUseWideViewPort(true);
+        s.setSupportZoom(true);
+        s.setBuiltInZoomControls(true);
+        s.setDisplayZoomControls(false);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        // 让手机浏览器能识别触屏设备
+        s.setUserAgentString(s.getUserAgentString() + " DeviceManagerApp/2.0.0");
+
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                progressBar.setVisibility(View.VISIBLE);
+                progressBar.setProgress(0);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                progressBar.setVisibility(View.GONE);
+                errorView.setVisibility(View.GONE);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                // 主框架加载失败才显示错误页（避免子资源错误误报）
+                if (request != null && request.isForMainFrame()) {
+                    progressBar.setVisibility(View.GONE);
+                    errorView.setVisibility(View.VISIBLE);
+                }
+            }
+        });
+
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onProgressChanged(WebView view, int newProgress) {
+                progressBar.setProgress(newProgress);
+            }
+        });
+
+        // 进度条
+        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setMax(100);
+        progressBar.setProgressTintList(android.content.res.ColorStateList.valueOf(0xFF2563EB));
+        progressBar.setVisibility(View.GONE);
+
+        // 错误提示
+        errorView = new TextView(this);
+        errorView.setText(R.string.load_failed);
+        errorView.setTextSize(16);
+        errorView.setTextColor(0xFF6B7280);
+        errorView.setGravity(android.view.Gravity.CENTER);
+        errorView.setVisibility(View.GONE);
+        errorView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                reloadCurrent();
+            }
+        });
+
+        container.addView(webView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        container.addView(progressBar, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, 8, android.view.Gravity.TOP));
+        container.addView(errorView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        setContentView(container);
+    }
+
+    private String normalizeUrl(String raw) {
+        String u = raw.trim();
+        if (!u.startsWith("http://") && !u.startsWith("https://")) {
+            u = "http://" + u;
+        }
+        return u;
+    }
+
+    private void loadUrl(String url) {
+        errorView.setVisibility(View.GONE);
+        webView.loadUrl(url);
+    }
+
+    private void reloadCurrent() {
+        if (webView.getUrl() != null) {
+            loadUrl(webView.getUrl());
+        } else {
+            String saved = prefs.getString(KEY_SERVER_URL, "");
+            if (saved != null && !saved.trim().isEmpty()) {
+                loadUrl(normalizeUrl(saved.trim()));
+            } else {
+                showServerDialog(true);
+            }
+        }
+    }
+
+    private void showServerDialog(final boolean isFirst) {
+        final EditText input = new EditText(this);
+        input.setHint(R.string.server_url_hint);
+        input.setSingleLine(true);
+        String current = prefs.getString(KEY_SERVER_URL, "");
+        input.setText(current != null && !current.isEmpty() ? current : getString(R.string.default_url));
+        input.setSelection(input.getText().length());
+
+        LinearLayout wrap = new LinearLayout(this);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        wrap.setPadding(pad, pad / 2, pad, 0);
+        wrap.addView(input, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.settings)
+                .setView(wrap)
+                .setCancelable(false)
+                .setNegativeButton(R.string.exit, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        if (isFirst) {
+                            finish();
+                        } else {
+                            d.dismiss();
+                        }
+                    }
+                })
+                .setPositiveButton(R.string.save, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        String url = input.getText().toString().trim();
+                        if (url.isEmpty()) {
+                            Toast.makeText(MainActivity.this, R.string.server_url_hint, Toast.LENGTH_SHORT).show();
+                            showServerDialog(isFirst);
+                            return;
+                        }
+                        String normalized = normalizeUrl(url);
+                        prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
+                        loadUrl(normalized);
+                    }
+                })
+                .show();
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        menu.add(0, 1, 0, R.string.settings);
+        menu.add(0, 2, 0, R.string.refresh);
+        menu.add(0, 3, 0, R.string.exit);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case 1:
+                showServerDialog(false);
+                return true;
+            case 2:
+                reloadCurrent();
+                return true;
+            case 3:
+                finish();
+                return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // 返回键优先回退网页历史
+        if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
+            webView.goBack();
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (webView != null) {
+            webView.destroy();
+        }
+        super.onDestroy();
+    }
+}

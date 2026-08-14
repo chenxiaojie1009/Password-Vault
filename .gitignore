@@ -25,6 +25,15 @@ deploy/server.log
 deploy/watchdog.log
 deploy/backups/
 deploy/uploads/
+deploy/DeviceManager_old_*.exe
 
 # 内部工具目录
 .kunsdd/
+
+# Android APK 工程构建产物
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/device-manager.keystore
+android/*.keystore

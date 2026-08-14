@@ -1,7 +1,7 @@
 """
 Password Manager Backend - FastAPI
 """
-import os, sys, re, io, shutil, uuid
+import os, sys, re, io, json, shutil, uuid, subprocess
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -85,6 +85,12 @@ async def lifespan(app: FastAPI):
         init_admin(db)
     finally:
         db.close()
+    # 清理上次升级残留标记（应用重启后视为升级完成）
+    try:
+        if os.path.exists(UPGRADE_APPLYING_FLAG):
+            os.remove(UPGRADE_APPLYING_FLAG)
+    except Exception:
+        pass
     # 每天凌晨 2:00 自动备份
     scheduler.add_job(perform_backup, "cron", hour=2, minute=0, id="daily_backup")
     scheduler.start()
@@ -92,7 +98,7 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
 
 
-app = FastAPI(title="Password Manager", version="1.2.0", lifespan=lifespan)
+app = FastAPI(title="Password Manager", version="2.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 Base.metadata.create_all(bind=engine)
 BACKUP_DIR = os.path.join(BASE_DIR, "backups")
@@ -100,6 +106,16 @@ os.makedirs(BACKUP_DIR, exist_ok=True)
 
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# ---- Online Upgrade (v2.0) ----
+APP_VERSION = "2.0.0"
+UPGRADE_DIR = os.path.join(BASE_DIR, "upgrade")
+os.makedirs(UPGRADE_DIR, exist_ok=True)
+UPGRADE_NEW_EXE = os.path.join(UPGRADE_DIR, "DeviceManager_new.exe")
+UPGRADE_VERSION_FILE = os.path.join(UPGRADE_DIR, "version.json")
+UPGRADE_APPLYING_FLAG = os.path.join(BASE_DIR, "upgrade_applying.flag")
+MAX_UPGRADE_SIZE = 300 * 1024 * 1024  # 300 MB
+
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB
 ALLOWED_EXTENSIONS = {
     '.doc', '.docx', '.xls', '.xlsx', '.pdf',
@@ -1029,6 +1045,154 @@ def restore_backup(filename: str, db: Session = Depends(get_db), _: User = Depen
     return {"ok": True}
 
 
+# ---- Online Upgrade (v2.0) ----
+def _read_version_json(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _upgrade_staged_info() -> Optional[dict]:
+    """Return info about the staged (uploaded but not applied) upgrade package."""
+    if os.path.exists(UPGRADE_NEW_EXE) and os.path.exists(UPGRADE_VERSION_FILE):
+        info = _read_version_json(UPGRADE_VERSION_FILE)
+        return {
+            "version": str(info.get("version", "")),
+            "changelog": str(info.get("changelog", "")),
+            "size_bytes": os.path.getsize(UPGRADE_NEW_EXE),
+            "uploaded_at": datetime.fromtimestamp(
+                os.path.getmtime(UPGRADE_NEW_EXE)).strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    return None
+
+
+@app.get("/api/upgrade/info")
+def upgrade_info(_: User = Depends(require_admin)):
+    return {
+        "current_version": APP_VERSION,
+        "frozen": bool(getattr(sys, "frozen", False)),
+        "base_dir": BASE_DIR,
+        "applying": os.path.exists(UPGRADE_APPLYING_FLAG),
+        "staged": _upgrade_staged_info(),
+    }
+
+
+@app.post("/api/upgrade/upload")
+async def upload_upgrade(file: UploadFile = File(...), db: Session = Depends(get_db),
+                         admin_user: User = Depends(require_admin)):
+    """上传升级包（zip：包含 DeviceManager.exe + version.json）"""
+    contents = await file.read()
+    if len(contents) > MAX_UPGRADE_SIZE:
+        raise HTTPException(status_code=400, detail="升级包超过 300MB")
+    try:
+        import zipfile
+        zf = zipfile.ZipFile(io.BytesIO(contents))
+        names = set(zf.namelist())
+        if "DeviceManager.exe" not in names:
+            raise HTTPException(status_code=400, detail="升级包中缺少 DeviceManager.exe")
+        if "version.json" not in names:
+            raise HTTPException(status_code=400, detail="升级包中缺少 version.json")
+        ver = json.loads(zf.read("version.json").decode("utf-8"))
+        if not str(ver.get("version", "")).strip():
+            raise HTTPException(status_code=400, detail="version.json 中 version 不能为空")
+        # 校验新程序文件是有效的 PE 可执行文件（MZ 头）
+        exe_bytes = zf.read("DeviceManager.exe")
+        if len(exe_bytes) < 2 or exe_bytes[:2] != b"MZ":
+            raise HTTPException(status_code=400, detail="DeviceManager.exe 不是有效的可执行文件")
+        os.makedirs(UPGRADE_DIR, exist_ok=True)
+        with open(UPGRADE_NEW_EXE, "wb") as f:
+            f.write(exe_bytes)
+        with open(UPGRADE_VERSION_FILE, "w", encoding="utf-8") as f:
+            json.dump({"version": str(ver.get("version")), "changelog": str(ver.get("changelog", ""))},
+                      f, ensure_ascii=False, indent=2)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"无效的升级包: {str(e)}")
+    write_audit(db, admin_user.id, "upgrade", "system",
+                detail=f"上传升级包 v{ver.get('version', '')}")
+    return {"ok": True, "version": str(ver.get("version", "")),
+            "changelog": str(ver.get("changelog", ""))}
+
+
+@app.post("/api/upgrade/apply")
+def apply_upgrade(db: Session = Depends(get_db), admin_user: User = Depends(require_admin)):
+    """应用升级：自动备份数据 → 替换程序文件 → 自动重启（保留数据库与附件）"""
+    if not getattr(sys, "frozen", False):
+        raise HTTPException(status_code=400,
+                            detail="当前为开发模式，在线升级仅支持打包后的 DeviceManager.exe 运行环境")
+    if os.path.exists(UPGRADE_APPLYING_FLAG):
+        raise HTTPException(status_code=400, detail="升级正在进行中，请稍候")
+    if not os.path.exists(UPGRADE_NEW_EXE):
+        raise HTTPException(status_code=400, detail="请先上传升级包")
+    # 1. 升级前自动备份当前数据（数据库 + 附件）
+    perform_backup()
+    # 2. 生成升级脚本：等待响应返回 → 结束当前进程 → 替换 exe → 重启
+    #    使用 PowerShell：按 exe 路径精确结束进程（PyInstaller 有 bootloader+python
+    #    两个同名进程，且不能误杀其它实例），Start-Process 可靠重启。
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    old_exe = os.path.join(BASE_DIR, f"DeviceManager_old_{ts}.exe")
+    target_exe = os.path.join(BASE_DIR, "DeviceManager.exe")
+    ps1_path = os.path.join(BASE_DIR, "upgrade_apply.ps1")
+    port = os.environ.get("DM_PORT", "8000")
+    ps1_content = f"""$ErrorActionPreference = 'SilentlyContinue'
+Start-Sleep -Seconds 5
+# 只结束从当前 exe 路径启动的进程（含 bootloader 与 python 子进程），不影响其它实例
+Get-Process -Name DeviceManager -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq '{target_exe}' }} | Stop-Process -Force
+Start-Sleep -Seconds 2
+if (Test-Path '{target_exe}') {{ Move-Item -Force '{target_exe}' '{old_exe}' }}
+Move-Item -Force '{UPGRADE_NEW_EXE}' '{target_exe}'
+$env:DM_PORT = '{port}'
+Start-Process -FilePath '{target_exe}' -WorkingDirectory '{BASE_DIR}' -WindowStyle Hidden
+Start-Sleep -Seconds 2
+Remove-Item -Force '{UPGRADE_VERSION_FILE}' -ErrorAction SilentlyContinue
+Remove-Item -Force '{UPGRADE_APPLYING_FLAG}' -ErrorAction SilentlyContinue
+Remove-Item -Force '{ps1_path}' -ErrorAction SilentlyContinue
+"""
+    try:
+        with open(ps1_path, "w", encoding="utf-8") as f:
+            f.write(ps1_content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"无法写入升级脚本: {str(e)}")
+    # 3. 标记升级中
+    try:
+        with open(UPGRADE_APPLYING_FLAG, "w") as f:
+            f.write(ts)
+    except Exception:
+        pass
+    write_audit(db, admin_user.id, "upgrade", "system",
+                detail=f"应用升级 v{_read_version_json(UPGRADE_VERSION_FILE).get('version', '')}，服务将自动重启")
+    # 4. 分离启动升级脚本（不阻塞响应）。
+    #    注意：不能加 DETACHED_PROCESS，实测该 flag 下 powershell 无法执行；
+    #    CREATE_NO_WINDOW 足够隐藏窗口，父进程退出后脚本仍会继续运行。
+    try:
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden",
+             "-ExecutionPolicy", "Bypass", "-File", ps1_path],
+            cwd=BASE_DIR,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            close_fds=True,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"无法启动升级脚本: {str(e)}")
+    return {"ok": True, "message": "升级已开始，服务将自动重启，请稍后刷新页面"}
+
+
+@app.post("/api/upgrade/cancel")
+def cancel_upgrade(db: Session = Depends(get_db), admin_user: User = Depends(require_admin)):
+    """取消已上传但未应用的升级包"""
+    for p in (UPGRADE_NEW_EXE, UPGRADE_VERSION_FILE):
+        try:
+            if os.path.exists(p):
+                os.remove(p)
+        except Exception:
+            pass
+    write_audit(db, admin_user.id, "upgrade", "system", detail="取消待应用的升级包")
+    return {"ok": True}
+
+
 # ---- Dashboard ----
 @app.get("/api/dashboard")
 def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -1079,4 +1243,4 @@ async def serve_frontend(full_path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("DM_PORT", "8000")))

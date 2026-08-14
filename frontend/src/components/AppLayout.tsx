@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Button, Dropdown, Modal, Form, Input, theme, message, Grid, Tooltip } from 'antd';
 const { useBreakpoint } = Grid;
-import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined, CloudServerOutlined, AppstoreOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined, CloudServerOutlined, AppstoreOutlined, ThunderboltOutlined, RocketOutlined } from '@ant-design/icons';
 import api from '../api/client';
 import { generatePassword } from '../utils';
 import PasswordStrengthMeter from './PasswordStrengthMeter';
@@ -34,7 +34,8 @@ export default function AppLayout() {
     ...(user.role === 'admin' ? [
       { key: '/audit', icon: <AuditOutlined />, label: '审计日志' },
       { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
-      { key: '/backup', icon: <CloudServerOutlined />, label: '备份与还原' }
+      { key: '/backup', icon: <CloudServerOutlined />, label: '备份与还原' },
+      { key: '/upgrade', icon: <RocketOutlined />, label: '系统升级' }
     ] : []),
   ];
 

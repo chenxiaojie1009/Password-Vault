@@ -1,0 +1,28 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.device.manager'
+    compileSdk 36
+    buildToolsVersion '36.1.0'
+
+    defaultConfig {
+        applicationId 'com.device.manager'
+        minSdk 24
+        targetSdk 34
+        versionCode 200
+        versionName '2.0.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
