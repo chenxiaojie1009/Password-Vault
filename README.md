@@ -64,9 +64,9 @@
 4. Chrome 可选"添加到主屏幕"→全屏运行
 
 ### 手机 APK（推荐）
-1. 安装 `android/app/build/outputs/apk/release/DeviceManager-v2.0.0.apk`（或运行 `android\build_apk.bat` 自行打包）
-2. 首次打开输入服务器地址，如 `http://192.168.1.5:8000`
-3. 菜单可随时修改服务器地址 / 刷新 / 退出
+1. 安装 `deploy/DeviceManager-v2.1.1.apk`（或运行 `android\build_apk.bat` 自行打包，版本号见 `android/version.properties`）
+2. 每次打开先确认服务器地址（可修改），如 `http://192.168.1.5:8000`
+3. 菜单可随时修改服务器地址 / 刷新 / 退出（退出需二次确认）
 4. 手机需与服务器处于同一局域网
 
 ## 🛠 技术栈

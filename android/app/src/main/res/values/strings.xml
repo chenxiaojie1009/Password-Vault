@@ -8,9 +8,9 @@
     <string name="exit">退出</string>
     <string name="connecting">正在连接服务器…</string>
     <string name="load_failed">无法连接服务器，请检查地址或网络后重试</string>
+    <string name="load_http_error">服务器返回错误（HTTP %1$d），请检查服务器状态或更换地址</string>
     <string name="default_url">http://192.168.1.5:8000</string>
     <string name="confirm_server_title">确认服务器地址</string>
-    <string name="connect">连接</string>
     <string name="exit_confirm_title">退出确认</string>
     <string name="exit_confirm_msg">当前服务器：%1$s
 

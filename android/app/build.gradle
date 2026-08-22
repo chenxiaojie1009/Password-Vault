@@ -2,6 +2,21 @@ plugins {
     id 'com.android.application'
 }
 
+// 版本号单一来源：android/version.properties（build.gradle / build_apk.bat / Java 共用）
+def versionProps = new Properties()
+def versionFile = rootProject.file('version.properties')
+if (versionFile.exists()) {
+    def text = versionFile.getText('UTF-8').replaceAll('^\uFEFF', '')
+    text.eachLine { line ->
+        def parts = line.split('=', 2)
+        if (parts.length == 2) {
+            versionProps.setProperty(parts[0].trim(), parts[1].trim())
+        }
+    }
+}
+def appVersionCode = (versionProps.getProperty('versionCode') ?: '1').toInteger()
+def appVersionName = versionProps.getProperty('versionName') ?: '1.0.0'
+
 android {
     namespace 'com.device.manager'
     compileSdk 36
@@ -11,14 +26,18 @@ android {
         applicationId 'com.device.manager'
         minSdk 24
         targetSdk 34
-        versionCode 201
-        versionName '2.1.0'
+        versionCode appVersionCode
+        versionName appVersionName
     }
 
     buildTypes {
         release {
             minifyEnabled false
         }
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     lint {

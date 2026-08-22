@@ -2,21 +2,18 @@ package com.device.manager;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.Window;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -45,6 +42,8 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     // 防止同一次加载失败重复弹出服务器设置框
     private boolean serverDialogShown;
+    // 当前显示的对话框，防止错误回调在弹窗之上再叠弹窗
+    private AlertDialog activeDialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,8 +72,8 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        // 让手机浏览器能识别触屏设备
-        s.setUserAgentString(s.getUserAgentString() + " DeviceManagerApp/2.1.0");
+        // 让手机浏览器能识别触屏设备（版本号来自 BuildConfig，与 gradle 保持同步）
+        s.setUserAgentString(s.getUserAgentString() + " DeviceManagerApp/" + BuildConfig.VERSION_NAME);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -98,6 +97,17 @@ public class MainActivity extends Activity {
                     errorView.setVisibility(View.VISIBLE);
                     // 连接失败直接跳到服务器地址设置界面
                     showErrorServerDialog();
+                }
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                // 服务器可达但返回 4xx/5xx 时 onReceivedError 不会触发，需单独处理
+                if (request != null && request.isForMainFrame()
+                        && errorResponse != null && errorResponse.getStatusCode() >= 400) {
+                    progressBar.setVisibility(View.GONE);
+                    errorView.setVisibility(View.VISIBLE);
+                    showErrorServerDialog(errorResponse.getStatusCode());
                 }
             }
         });
@@ -166,15 +176,37 @@ public class MainActivity extends Activity {
     }
 
     private void showErrorServerDialog() {
-        if (serverDialogShown) {
+        showErrorServerDialog(-1);
+    }
+
+    private void showErrorServerDialog(int httpStatusCode) {
+        if (serverDialogShown || isFinishing() || isDestroyed()) {
             return;
         }
         serverDialogShown = true;
-        Toast.makeText(this, R.string.load_failed, Toast.LENGTH_LONG).show();
+        if (httpStatusCode >= 400) {
+            Toast.makeText(this, getString(R.string.load_http_error, httpStatusCode), Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(this, R.string.load_failed, Toast.LENGTH_LONG).show();
+        }
         showServerDialog(false);
     }
 
+    private void dismissActiveDialog() {
+        if (activeDialog != null) {
+            if (activeDialog.isShowing()) {
+                activeDialog.dismiss();
+            }
+            activeDialog = null;
+        }
+    }
+
     private void showServerDialog(final boolean isFirst) {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        dismissActiveDialog();
+
         final EditText input = new EditText(this);
         input.setHint(R.string.server_url_hint);
         input.setSingleLine(true);
@@ -188,7 +220,7 @@ public class MainActivity extends Activity {
         wrap.addView(input, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        new AlertDialog.Builder(this)
+        activeDialog = new AlertDialog.Builder(this)
                 .setTitle(isFirst ? R.string.confirm_server_title : R.string.settings)
                 .setView(wrap)
                 .setCancelable(false)
@@ -244,9 +276,14 @@ public class MainActivity extends Activity {
     }
 
     private void showExitConfirm() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        dismissActiveDialog();
+
         String saved = prefs.getString(KEY_SERVER_URL, "");
         String url = (saved != null && !saved.trim().isEmpty()) ? normalizeUrl(saved.trim()) : getString(R.string.default_url);
-        new AlertDialog.Builder(this)
+        activeDialog = new AlertDialog.Builder(this)
                 .setTitle(R.string.exit_confirm_title)
                 .setMessage(getString(R.string.exit_confirm_msg, url))
                 .setCancelable(true)
@@ -282,7 +319,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        dismissActiveDialog();
         if (webView != null) {
+            webView.stopLoading();
+            container.removeView(webView);
             webView.destroy();
         }
         super.onDestroy();
