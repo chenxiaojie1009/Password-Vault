@@ -31,7 +31,7 @@ import android.widget.Toast;
  * 设备管理器 - Android APK 封装
  *
  * 以 WebView 加载局域网内的设备管理器服务器（http://<服务器IP>:8000），
- * 首次启动可配置服务器地址，之后自动连接。
+ * 每次启动弹出确认框核对/修改服务器地址，退出时再次确认。
  */
 public class MainActivity extends Activity {
 
@@ -43,19 +43,16 @@ public class MainActivity extends Activity {
     private TextView errorView;
     private FrameLayout container;
     private SharedPreferences prefs;
+    // 防止同一次加载失败重复弹出服务器设置框
+    private boolean serverDialogShown;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         buildUi();
-
-        String saved = prefs.getString(KEY_SERVER_URL, "");
-        if (saved == null || saved.trim().isEmpty()) {
-            showServerDialog(true);
-        } else {
-            loadUrl(normalizeUrl(saved.trim()));
-        }
+        // 每次启动都确认服务器地址，可在此修改后连接
+        showServerDialog(true);
     }
 
     private void buildUi() {
@@ -77,11 +74,12 @@ public class MainActivity extends Activity {
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         // 让手机浏览器能识别触屏设备
-        s.setUserAgentString(s.getUserAgentString() + " DeviceManagerApp/2.0.0");
+        s.setUserAgentString(s.getUserAgentString() + " DeviceManagerApp/2.1.0");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                serverDialogShown = false;
                 progressBar.setVisibility(View.VISIBLE);
                 progressBar.setProgress(0);
             }
@@ -94,10 +92,12 @@ public class MainActivity extends Activity {
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                // 主框架加载失败才显示错误页（避免子资源错误误报）
+                // 主框架加载失败才提示（避免子资源错误误报）
                 if (request != null && request.isForMainFrame()) {
                     progressBar.setVisibility(View.GONE);
                     errorView.setVisibility(View.VISIBLE);
+                    // 连接失败直接跳到服务器地址设置界面
+                    showErrorServerDialog();
                 }
             }
         });
@@ -165,6 +165,15 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showErrorServerDialog() {
+        if (serverDialogShown) {
+            return;
+        }
+        serverDialogShown = true;
+        Toast.makeText(this, R.string.load_failed, Toast.LENGTH_LONG).show();
+        showServerDialog(false);
+    }
+
     private void showServerDialog(final boolean isFirst) {
         final EditText input = new EditText(this);
         input.setHint(R.string.server_url_hint);
@@ -180,7 +189,7 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         new AlertDialog.Builder(this)
-                .setTitle(R.string.settings)
+                .setTitle(isFirst ? R.string.confirm_server_title : R.string.settings)
                 .setView(wrap)
                 .setCancelable(false)
                 .setNegativeButton(R.string.exit, new DialogInterface.OnClickListener() {
@@ -228,17 +237,44 @@ public class MainActivity extends Activity {
                 reloadCurrent();
                 return true;
             case 3:
-                finish();
+                showExitConfirm();
                 return true;
         }
         return super.onOptionsItemSelected(item);
     }
 
+    private void showExitConfirm() {
+        String saved = prefs.getString(KEY_SERVER_URL, "");
+        String url = (saved != null && !saved.trim().isEmpty()) ? normalizeUrl(saved.trim()) : getString(R.string.default_url);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.exit_confirm_title)
+                .setMessage(getString(R.string.exit_confirm_msg, url))
+                .setCancelable(true)
+                .setNegativeButton(R.string.cancel, null)
+                .setNeutralButton(R.string.change_server, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        showServerDialog(false);
+                    }
+                })
+                .setPositiveButton(R.string.confirm_exit, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        finish();
+                    }
+                })
+                .show();
+    }
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        // 返回键优先回退网页历史
-        if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
-            webView.goBack();
+        // 返回键优先回退网页历史，无法回退时弹出退出确认
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (webView.canGoBack()) {
+                webView.goBack();
+            } else {
+                showExitConfirm();
+            }
             return true;
         }
         return super.onKeyDown(keyCode, event);

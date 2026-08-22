@@ -18,14 +18,16 @@ if not exist device-manager.keystore (
         -storepass dm123456 -keypass dm123456 -dname "CN=Device Manager, OU=IT, O=Device Manager, L=City, ST=State, C=CN"
 )
 
-echo [3/3] 签名 APK...
+echo [3/3] 签名 APK（输出到 deploy 目录）...
 set BUILD_TOOLS=C:\Users\chen\AppData\Local\Android\Sdk\build-tools\36.1.0
+set OUT_APK=%~dp0..\deploy\DeviceManager-v2.1.0.apk
+if not exist "%~dp0..\deploy" mkdir "%~dp0..\deploy"
 "%BUILD_TOOLS%\apksigner.bat" sign --ks device-manager.keystore --ks-pass pass:dm123456 --key-pass pass:dm123456 ^
-    --out "app\build\outputs\apk\release\DeviceManager-v2.0.0.apk" ^
+    --out "%OUT_APK%" ^
     "app\build\outputs\apk\release\app-release-unsigned.apk"
 
 echo.
-echo 构建完成：app\build\outputs\apk\release\DeviceManager-v2.0.0.apk
+echo 构建完成：%OUT_APK%
 goto :eof
 
 :fail
