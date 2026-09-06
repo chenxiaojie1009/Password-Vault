@@ -66,6 +66,50 @@ class TestFileUpload:
         data = resp.json()
         assert data["success"] == 2
 
+    def test_upload_archive_and_new_types(self, client, admin_token):
+        """v2.1: 压缩包、PPT、SVG 等新类型应可上传成功."""
+        dev = client.post("/api/devices", json={
+            "name": "File-Test-04", "device_type": "其他",
+            "ips": [], "macs": [], "accounts": []
+        }, headers=admin_token).json()
+        did = dev["id"]
+
+        cases = [
+            ("configs.zip", "application/zip"),
+            ("backup.rar", "application/vnd.rar"),
+            ("data.7z", "application/x-7z-compressed"),
+            ("slides.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+            ("notes.txt", "text/plain"),
+            ("plan.csv", "text/csv"),
+            ("icon.svg", "image/svg+xml"),
+        ]
+        resp = client.post(f"/api/devices/{did}/files",
+            files=[("files", (name, io.BytesIO(b"test content"), ctype)) for name, ctype in cases],
+            headers=admin_token)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] == len(cases)
+        assert data["failed"] == 0, data["errors"]
+
+    def test_upload_still_rejects_unsafe_types(self, client, admin_token):
+        """v2.1: 可执行文件等不安全类型仍应被拒绝."""
+        dev = client.post("/api/devices", json={
+            "name": "File-Test-05", "device_type": "其他",
+            "ips": [], "macs": [], "accounts": []
+        }, headers=admin_token).json()
+        did = dev["id"]
+
+        fake = io.BytesIO(b"MZ fake")
+        fake.name = "installer.exe"
+        resp = client.post(f"/api/devices/{did}/files",
+            files=[("files", ("installer.exe", fake, "application/octet-stream"))],
+            headers=admin_token)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] == 0
+        assert data["failed"] == 1
+        assert "installer.exe" in data["errors"][0]
+
     def test_viewer_can_upload_to_level1_device(self, client, admin_token, viewer_token):
         """Viewer can upload files to level-1 devices (new permission)."""
         dev = client.post("/api/devices", json={
@@ -157,6 +201,25 @@ class TestFileDownload:
         resp = client.get(f"/api/files/{fid}/download", headers=admin_token)
         assert resp.status_code == 200
         assert resp.content == b"hello world content"
+
+    def test_download_zip_mime(self, client, admin_token):
+        """v2.1: 压缩包下载应返回正确的 MIME 类型."""
+        dev = client.post("/api/devices", json={
+            "name": "File-DL-Zip", "device_type": "服务器",
+            "ips": [], "macs": [], "accounts": []
+        }, headers=admin_token).json()
+        did = dev["id"]
+
+        client.post(f"/api/devices/{did}/files",
+            files=[("files", ("bundle.zip", io.BytesIO(b"PK\x03\x04 fake zip"), "application/zip"))],
+            headers=admin_token)
+
+        files = client.get(f"/api/devices/{did}/files", headers=admin_token).json()
+        fid = files[0]["id"]
+        resp = client.get(f"/api/files/{fid}/download", headers=admin_token)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("application/zip")
+        assert resp.content == b"PK\x03\x04 fake zip"
 
     def test_download_nonexistent_file(self, client, admin_token):
         resp = client.get("/api/files/99999/download", headers=admin_token)

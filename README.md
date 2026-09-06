@@ -9,7 +9,7 @@
 - 🌐 **多 IP / MAC** — 每个设备支持多个 IP 地址和 MAC 地址（可带标签）
 - 🔴 **涉网管控** — 标记涉网设备，viewer/editor 无权查看，operator/admin 可查看
 - 🔑 **密码加密** — 设备密码 Fernet 对称加密存储，可解密查看
-- 📎 **文件附件** — 设备支持上传 Word/Excel/PDF/图片等附件，单文件 ≤100MB，跟随设备权限
+- 📎 **文件附件** — 设备支持上传压缩包/Word/Excel/PPT/PDF/图片/文本等附件，单文件 ≤100MB，跟随设备权限
 
 ### 权限体系（按设备分级）
 | 角色 | 可创建等级 | 可查看等级 | 可编辑/删除等级 | 查看涉网 | 用户管理 | 系统配置 |
@@ -42,7 +42,7 @@
 - 🚀 **一键升级** — 管理员在「系统升级」页面上传新版本升级包（zip：`DeviceManager.exe` + `version.json`），系统**自动备份数据**、替换程序文件并**自动重启**
 - 💾 **数据零丢失** — 升级只替换程序文件，数据库 `device_manager.db` 与附件 `uploads/` 原样保留，旧程序自动存为备份
 - 🔄 **升级流程** — 上传 → 确认升级 → 自动备份 → 替换 → 重启 → 页面自动恢复；升级前自动调用备份，可随时在「备份与还原」中回滚
-- 📦 **示例升级包** — `deploy/upgrade_v2.0.0.zip` 即当前版本的升级包，可用于测试升级流程
+- 📦 **示例升级包** — `deploy/upgrade_v2.1.2.zip` 即当前版本的升级包，可用于测试升级流程
 
 ## 🚀 快速开始
 
@@ -77,7 +77,7 @@
 | 前端 | React 19 + TypeScript + Ant Design 5 |
 | 认证 | JWT + bcrypt（用户密码）/ Fernet（设备密码） |
 | 打包 | PyInstaller → 独立 EXE |
-| 测试 | pytest（81 个测试用例） |
+| 测试 | pytest（92 个测试用例） |
 
 ## 📁 项目结构
 
@@ -91,7 +91,7 @@ device-manager/
 │   ├── database.py           # SQLite 配置
 │   ├── requirements.txt      # Python 依赖
 │   ├── uploads/              # 设备附件存储目录
-│   └── tests/                # 81 个测试用例
+│   └── tests/                # 92 个测试用例
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/
@@ -127,7 +127,7 @@ npm run dev                 # → http://localhost:3000
 
 # 测试
 cd backend
-python -m pytest tests/ -v  # 81 passed
+python -m pytest tests/ -v  # 92 passed
 ```
 
 > 生产部署建议通过环境变量 `DM_SECRET_KEY` 覆盖默认 JWT/设备密码加密密钥。

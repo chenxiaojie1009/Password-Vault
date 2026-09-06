@@ -1,4 +1,4 @@
-{
-  "version": "2.0.0",
-  "changelog": "v2.0.0 新增功能：\n1. 在线升级：管理员可直接上传升级包并自动替换程序文件，数据自动备份、不丢失；\n2. 系统升级管理页面（管理员菜单）。"
+﻿{
+    "version":  "2.1.2",
+    "changelog":  "v2.1.2 更新内容：\n1. 添加设备/编辑设备附件上传新增文件类型：压缩包（zip/rar/7z/tar/gz/tgz/bz2/xz）、PPT（ppt/pptx）、文本（txt/csv）、更多图片格式（svg/ico/tif/tiff）；\n2. 原有 Word/Excel/PDF/图片类型保持不变，下载附件自动识别正确的文件类型。"
 }

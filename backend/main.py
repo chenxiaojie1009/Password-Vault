@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
 
 
-app = FastAPI(title="Password Manager", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Password Manager", version="2.1.2", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 Base.metadata.create_all(bind=engine)
 BACKUP_DIR = os.path.join(BASE_DIR, "backups")
@@ -108,7 +108,7 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ---- Online Upgrade (v2.0) ----
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.2"
 UPGRADE_DIR = os.path.join(BASE_DIR, "upgrade")
 os.makedirs(UPGRADE_DIR, exist_ok=True)
 UPGRADE_NEW_EXE = os.path.join(UPGRADE_DIR, "DeviceManager_new.exe")
@@ -117,9 +117,15 @@ UPGRADE_APPLYING_FLAG = os.path.join(BASE_DIR, "upgrade_applying.flag")
 MAX_UPGRADE_SIZE = 300 * 1024 * 1024  # 300 MB
 
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB
+# 设备附件允许的文件类型：文档 / 表格 / 演示 / 文本 / 图片 / 压缩包
 ALLOWED_EXTENSIONS = {
+    # Word / Excel / PDF / PPT / 文本
     '.doc', '.docx', '.xls', '.xlsx', '.pdf',
-    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'
+    '.ppt', '.pptx', '.txt', '.csv',
+    # 图片
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tif', '.tiff',
+    # 压缩包
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.tgz', '.bz2', '.xz',
 }
 
 
@@ -666,8 +672,22 @@ def download_file(file_id: int, db: Session = Depends(get_db),
         'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'xls': 'application/vnd.ms-excel',
         'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'ppt': 'application/vnd.ms-powerpoint',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'txt': 'text/plain',
+        'csv': 'text/csv',
         'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
         'gif': 'image/gif', 'bmp': 'image/bmp', 'webp': 'image/webp',
+        'svg': 'image/svg+xml', 'ico': 'image/x-icon',
+        'tif': 'image/tiff', 'tiff': 'image/tiff',
+        'zip': 'application/zip',
+        'rar': 'application/vnd.rar',
+        '7z': 'application/x-7z-compressed',
+        'tar': 'application/x-tar',
+        'gz': 'application/gzip',
+        'tgz': 'application/gzip',
+        'bz2': 'application/x-bzip2',
+        'xz': 'application/x-xz',
     }
     media_type = mime_map.get(f.file_type, 'application/octet-stream')
     return FileResponse(dest, filename=f.original_filename, media_type=media_type)

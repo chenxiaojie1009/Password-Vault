@@ -10,6 +10,13 @@ const { Title } = Typography;
 const DEFAULT_TYPES = ["服务器", "交换机", "纵加设备", "路由器", "防火墙", "存储设备", "工作站", "其他"];
 const ALL_LEVELS = ["一级设备", "二级设备", "三级设备", "四级设备"];
 const ROLE_MAX_LEVEL: Record<string, number> = { admin: 4, operator: 3, editor: 2, viewer: 1 };
+// 附件允许的文件类型（与后端 ALLOWED_EXTENSIONS 保持一致）
+const ALLOWED_FILE_EXTS = [
+  ".doc", ".docx", ".xls", ".xlsx", ".pdf",
+  ".ppt", ".pptx", ".txt", ".csv",
+  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tif", ".tiff",
+  ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz",
+];
 
 // Levels this role is allowed to create/edit (e.g. viewer → only 一级设备)
 function allowedLevels(role: string): string[] {
@@ -328,12 +335,11 @@ export default function DeviceForm() {
           )}
           <Dragger
             multiple
-            accept=".doc,.docx,.xls,.xlsx,.pdf,.png,.jpg,.jpeg,.gif,.bmp,.webp"
+            accept={ALLOWED_FILE_EXTS.join(",")}
             showUploadList={false}
             beforeUpload={(file) => {
               const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-              const allowed = ['.doc','.docx','.xls','.xlsx','.pdf','.png','.jpg','.jpeg','.gif','.bmp','.webp'];
-              if (!allowed.includes(ext)) {
+              if (!ALLOWED_FILE_EXTS.includes(ext)) {
                 message.error(`不支持的文件类型: ${ext}`);
                 return false;
               }
@@ -347,7 +353,7 @@ export default function DeviceForm() {
           >
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
             <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
-            <p className="ant-upload-hint">支持 Word、Excel、PDF、图片，单文件不超过 100MB</p>
+            <p className="ant-upload-hint">支持压缩包（zip/rar/7z）、Word、Excel、PPT、PDF、图片、文本等，单文件不超过 100MB</p>
           </Dragger>
 
           <Divider />
