@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
 
 
-app = FastAPI(title="Password Manager", version="2.1.2", lifespan=lifespan)
+app = FastAPI(title="Password Manager", version="2.1.3", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 Base.metadata.create_all(bind=engine)
 BACKUP_DIR = os.path.join(BASE_DIR, "backups")
@@ -108,7 +108,7 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ---- Online Upgrade (v2.0) ----
-APP_VERSION = "2.1.2"
+APP_VERSION = "2.1.3"
 UPGRADE_DIR = os.path.join(BASE_DIR, "upgrade")
 os.makedirs(UPGRADE_DIR, exist_ok=True)
 UPGRADE_NEW_EXE = os.path.join(UPGRADE_DIR, "DeviceManager_new.exe")
