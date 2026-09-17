@@ -2,6 +2,14 @@
 
 内网设备账号密码管理工具 — 集中管理服务器、交换机、路由器等设备的账号密码，支持按设备分级权限、涉网管控、审计日志、备份还原。
 
+## 📥 下载
+
+最新版 Windows 程序与 Android APK 见 **[Releases](https://github.com/chenxiaojie1009/Password-Vault/releases/latest)**：
+
+- `DeviceManager.exe` — Windows 独立可执行文件（免安装 Python）
+- `DeviceManager-v4.0.apk` — Android 客户端（v4.0 换了发布签名，需先卸载旧版再安装）
+- `version.json` — 版本信息，自建在线升级包时与 `DeviceManager.exe` 一起打 zip
+
 ## ✨ 功能
 
 ### 设备管理
