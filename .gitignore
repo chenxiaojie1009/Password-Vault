@@ -18,6 +18,11 @@ uploads/
 backups/
 build/
 .env
+# 首次运行自动生成的实例加密密钥，绝不入库
+secret.key
+# 局域网 HTTPS 自签名证书（每台机器自己生成）
+tls.crt
+tls.key
 
 # 部署包：只忽略运行数据，保留可执行文件与启动脚本
 deploy/device_manager.db

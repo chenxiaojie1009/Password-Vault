@@ -5,11 +5,15 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.net.Uri;
+import android.net.http.SslCertificate;
+import android.net.http.SslError;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -24,16 +28,20 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.security.MessageDigest;
+
 /**
  * 设备管理器 - Android APK 封装
  *
- * 以 WebView 加载局域网内的设备管理器服务器（http://<服务器IP>:8000），
+ * 以 WebView 加载局域网内的设备管理器服务器（https://<服务器IP>:8000），
  * 每次启动弹出确认框核对/修改服务器地址，退出时再次确认。
  */
 public class MainActivity extends Activity {
 
     private static final String PREFS_NAME = "device_manager_prefs";
     private static final String KEY_SERVER_URL = "server_url";
+    /** 每个主机记住一张已确认的自签名证书指纹（TOFU） */
+    private static final String KEY_TRUSTED_CERT_PREFIX = "trusted_cert_";
 
     private WebView webView;
     private ProgressBar progressBar;
@@ -71,7 +79,7 @@ public class MainActivity extends Activity {
         s.setBuiltInZoomControls(true);
         s.setDisplayZoomControls(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // 让手机浏览器能识别触屏设备（版本号来自 BuildConfig，与 gradle 保持同步）
         s.setUserAgentString(s.getUserAgentString() + " DeviceManagerApp/" + BuildConfig.VERSION_NAME);
 
@@ -109,6 +117,21 @@ public class MainActivity extends Activity {
                     errorView.setVisibility(View.VISIBLE);
                     showErrorServerDialog(errorResponse.getStatusCode());
                 }
+            }
+
+            @Override
+            public void onReceivedSslError(WebView view, final SslErrorHandler handler, SslError error) {
+                // 内网服务器用自签名证书：系统无法验证，需人工核对指纹后放行
+                final String host = error != null ? hostOf(error.getUrl()) : "";
+                final String fingerprint = error != null ? certFingerprint(error.getCertificate()) : "";
+                String trusted = host.isEmpty() ? ""
+                        : prefs.getString(KEY_TRUSTED_CERT_PREFIX + host, "");
+                if (!fingerprint.isEmpty() && fingerprint.equals(trusted)) {
+                    handler.proceed();
+                    return;
+                }
+                progressBar.setVisibility(View.GONE);
+                showCertTrustDialog(handler, host, fingerprint, error);
             }
         });
 
@@ -152,7 +175,17 @@ public class MainActivity extends Activity {
     private String normalizeUrl(String raw) {
         String u = raw.trim();
         if (!u.startsWith("http://") && !u.startsWith("https://")) {
-            u = "http://" + u;
+            u = "https://" + u;
+        }
+        if (u.startsWith("http://")) {
+            u = "https://" + u.substring("http://".length());
+        }
+        // 只填 IP 时补默认端口，否则会去连 443
+        Uri parsed = Uri.parse(u);
+        String host = parsed.getHost();
+        if (parsed.getPort() == -1 && host != null && !host.isEmpty()) {
+            String path = parsed.getPath();
+            u = "https://" + host + ":8000" + (path == null ? "" : path);
         }
         return u;
     }
@@ -177,6 +210,89 @@ public class MainActivity extends Activity {
 
     private void showErrorServerDialog() {
         showErrorServerDialog(-1);
+    }
+
+    private String hostOf(String url) {
+        if (url == null) {
+            return "";
+        }
+        try {
+            String host = Uri.parse(url).getHost();
+            return host == null ? "" : host;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** 取服务器证书的 SHA-256 指纹（大写冒号分隔），取不到则返回空串。 */
+    private String certFingerprint(SslCertificate cert) {
+        if (cert == null) {
+            return "";
+        }
+        try {
+            Bundle state = SslCertificate.saveState(cert);
+            byte[] der = state == null ? null : state.getByteArray("x509-certificate");
+            if (der == null || der.length == 0) {
+                return "";
+            }
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(der);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                if (sb.length() > 0) {
+                    sb.append(':');
+                }
+                sb.append(String.format("%02X", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void showCertTrustDialog(final SslErrorHandler handler, final String host,
+                                     final String fingerprint, final SslError error) {
+        if (isFinishing() || isDestroyed()) {
+            handler.cancel();
+            return;
+        }
+        String issuedTo = "";
+        String issuedBy = "";
+        try {
+            SslCertificate cert = error == null ? null : error.getCertificate();
+            if (cert != null && cert.getIssuedTo() != null) {
+                issuedTo = cert.getIssuedTo().getDName();
+            }
+            if (cert != null && cert.getIssuedBy() != null) {
+                issuedBy = cert.getIssuedBy().getDName();
+            }
+        } catch (Exception ignored) {
+        }
+        dismissActiveDialog();
+        activeDialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.ssl_title)
+                .setMessage(getString(R.string.ssl_message, host,
+                        issuedTo.isEmpty() ? "-" : issuedTo,
+                        issuedBy.isEmpty() ? "-" : issuedBy,
+                        fingerprint.isEmpty() ? "-" : fingerprint))
+                .setCancelable(false)
+                .setNegativeButton(R.string.cancel, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        handler.cancel();
+                    }
+                })
+                .setPositiveButton(R.string.ssl_trust, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        if (!host.isEmpty() && !fingerprint.isEmpty()) {
+                            prefs.edit()
+                                    .putString(KEY_TRUSTED_CERT_PREFIX + host, fingerprint)
+                                    .apply();
+                        }
+                        handler.proceed();
+                    }
+                })
+                .show();
     }
 
     private void showErrorServerDialog(int httpStatusCode) {
@@ -243,7 +359,14 @@ public class MainActivity extends Activity {
                             showServerDialog(isFirst);
                             return;
                         }
-                        String normalized = normalizeUrl(url);
+                        String normalized;
+                        try {
+                            normalized = normalizeUrl(url);
+                        } catch (IllegalArgumentException e) {
+                            Toast.makeText(MainActivity.this, e.getMessage(), Toast.LENGTH_SHORT).show();
+                            showServerDialog(isFirst);
+                            return;
+                        }
                         prefs.edit().putString(KEY_SERVER_URL, normalized).apply();
                         loadUrl(normalized);
                     }

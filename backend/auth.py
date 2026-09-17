@@ -1,5 +1,6 @@
 """认证与权限模块"""
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
@@ -10,10 +11,78 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User, beijing_now
-import base64, hashlib
+import base64, hashlib, secrets, threading
 
-# 允许通过环境变量覆盖密钥；生产环境应设置 DM_SECRET_KEY
-SECRET_KEY = os.environ.get("DM_SECRET_KEY", "device-manager-secret-change-in-production")
+# Base directory: same convention as main.py (frozen bundle -> next to the exe)
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+SECRET_KEY_FILE = os.path.join(BASE_DIR, "secret.key")
+
+
+def _announce_new_key() -> None:
+    """Tell the operator where the freshly generated key lives."""
+    message = (
+        f"已首次生成加密密钥文件：\n{SECRET_KEY_FILE}\n\n"
+        "请妥善备份该文件；丢失后已加密的设备密码将无法解密。\n"
+        "如需改用自定义密钥，请设置环境变量 DM_SECRET_KEY（优先级最高）。"
+    )
+    try:
+        print(f"[DeviceManager] {message}", flush=True)
+    except Exception:
+        pass
+    # The exe runs without a console, so a dialog is the only way to be noticed.
+    # Show it on a daemon thread to keep server start-up non-blocking.
+    if getattr(sys, "frozen", False) and os.name == "nt":
+        def _show() -> None:
+            try:
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(None, message, "设备管理器", 0x40)
+            except Exception:
+                pass
+        threading.Thread(target=_show, daemon=True).start()
+
+
+def _load_or_create_secret_key() -> str:
+    """Resolve the instance secret: env var -> secret.key -> generate a new one.
+
+    A hard-coded default would make the stored passwords effectively unencrypted
+    for every installation, so a unique key is generated on first run instead.
+    """
+    env_key = os.environ.get("DM_SECRET_KEY")
+    if env_key:
+        return env_key
+    if "pytest" in sys.modules:
+        return "test-only-device-manager-secret"
+    if os.path.exists(SECRET_KEY_FILE):
+        with open(SECRET_KEY_FILE, "r", encoding="utf-8") as f:
+            key = f.read().strip()
+        if key:
+            return key
+        raise RuntimeError(
+            f"密钥文件为空：{SECRET_KEY_FILE}\n"
+            "请删除该文件后重启以重新生成，或用环境变量 DM_SECRET_KEY 指定密钥。"
+        )
+    key = secrets.token_urlsafe(48)
+    try:
+        with open(SECRET_KEY_FILE, "w", encoding="utf-8") as f:
+            f.write(key + "\n")
+        try:
+            os.chmod(SECRET_KEY_FILE, 0o600)
+        except OSError:
+            pass
+    except OSError as exc:
+        raise RuntimeError(
+            f"无法写入密钥文件 {SECRET_KEY_FILE}：{exc}\n"
+            "请确认程序目录可写，或改用环境变量 DM_SECRET_KEY 提供密钥。"
+        )
+    _announce_new_key()
+    return key
+
+
+SECRET_KEY = _load_or_create_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480
 
@@ -97,4 +166,11 @@ def require_operator(current_user: User = Depends(get_current_user)) -> User:
     """Admin and operator can view network-involved devices."""
     if current_user.role not in ("admin", "operator"):
         raise HTTPException(status_code=403, detail="需要运维权限")
+    return current_user
+
+
+def require_secret_access(current_user: User = Depends(get_current_user)) -> User:
+    """Only operational roles may reveal device secrets or export them."""
+    if current_user.role not in ("admin", "operator"):
+        raise HTTPException(status_code=403, detail="需要设备密码查看权限")
     return current_user

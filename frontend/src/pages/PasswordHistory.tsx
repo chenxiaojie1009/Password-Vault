@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Table, Card, Select, Space, Tag, DatePicker, Button, Tooltip, message, Avatar } from 'antd';
-import { HistoryOutlined, CopyOutlined, FilterOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { HistoryOutlined, CopyOutlined, EyeOutlined, EyeInvisibleOutlined, FilterOutlined, CloudServerOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../api/client';
 import { PageHeader, EmptyState } from '../components/ui';
@@ -16,7 +16,6 @@ interface HistoryRecord {
   changed_by_name: string;
   changed_at: string;
   reason: string;
-  old_password: string;
   account_name: string;
   device_name: string;
 }
@@ -27,6 +26,35 @@ export default function PasswordHistory() {
   const [devices, setDevices] = useState<{ id: number; name: string }[]>([]);
   const [deviceId, setDeviceId] = useState<number | undefined>();
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  const [passwords, setPasswords] = useState<Record<number, string>>({});
+  const [shownPasswords, setShownPasswords] = useState<Record<number, boolean>>({});
+  const canRevealSecrets = ['admin', 'operator'].includes(JSON.parse(localStorage.getItem('user') || '{}').role);
+
+  const revealPassword = async (id: number) => {
+    if (!canRevealSecrets) {
+      message.error('当前账号没有查看设备密码的权限');
+      return '';
+    }
+    if (passwords[id] !== undefined) return passwords[id];
+    try {
+      const res = await api.get('/password-history/' + id + '/password');
+      const password = res.data.password || '';
+      setPasswords((prev) => ({ ...prev, [id]: password }));
+      return password;
+    } catch {
+      message.error('无权查看历史密码或密码读取失败');
+      return '';
+    }
+  };
+
+  const togglePassword = async (id: number) => {
+    if (shownPasswords[id]) {
+      setShownPasswords((prev) => ({ ...prev, [id]: false }));
+      return;
+    }
+    const password = await revealPassword(id);
+    if (password) setShownPasswords((prev) => ({ ...prev, [id]: true }));
+  };
 
   const fetchDevices = async () => {
     try {
@@ -48,6 +76,8 @@ export default function PasswordHistory() {
       }
       const res = await api.get('/password-history', { params });
       setData(res.data || []);
+      setPasswords({});
+      setShownPasswords({});
     } catch {
       setData([]);
     } finally {
@@ -104,9 +134,8 @@ export default function PasswordHistory() {
       },
       {
         title: '旧密码',
-        dataIndex: 'old_password',
         width: 210,
-        render: (v: string) => (
+        render: (_: unknown, record: HistoryRecord) => (
           <Space size={4}>
             <span
               style={{
@@ -118,22 +147,22 @@ export default function PasswordHistory() {
                 color: 'var(--text-sub)',
               }}
             >
-              {v || '-'}
+              {shownPasswords[record.id] ? passwords[record.id] : '••••••••'}
             </span>
-            {v && (
-              <Tooltip title="复制旧密码">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<CopyOutlined />}
-                  onClick={async () => {
-                    const ok = await copyText(v);
-                    if (ok) message.success('旧密码已复制');
-                    else message.error('复制失败');
-                  }}
-                />
-              </Tooltip>
-            )}
+            <Tooltip title="显示旧密码">
+              <Button type="text" size="small" disabled={!canRevealSecrets}
+                icon={shownPasswords[record.id] ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                onClick={() => void togglePassword(record.id)} />
+            </Tooltip>
+            <Tooltip title="复制旧密码">
+              <Button type="text" size="small" disabled={!canRevealSecrets} icon={<CopyOutlined />}
+                onClick={async () => {
+                  const password = await revealPassword(record.id);
+                  const ok = await copyText(password);
+                  if (ok) message.success('旧密码已复制');
+                  else message.error('复制失败');
+                }} />
+            </Tooltip>
           </Space>
         ),
       },
@@ -157,7 +186,7 @@ export default function PasswordHistory() {
         render: (v: string) => (v ? <Tag color="orange">{v}</Tag> : <span style={{ color: 'var(--text-muted)' }}>-</span>),
       },
     ],
-    [],
+    [canRevealSecrets, passwords, shownPasswords],
   );
 
   return (
@@ -165,7 +194,7 @@ export default function PasswordHistory() {
       <PageHeader
         icon={<HistoryOutlined />}
         title="密码修改历史"
-        subtitle={`共 ${data.length} 条改密记录 · 含旧密码明文留档`}
+        subtitle={`共 ${data.length} 条改密记录 · 密码加密留档，按权限单独查看`}
         extra={
           <Space wrap>
             <Select

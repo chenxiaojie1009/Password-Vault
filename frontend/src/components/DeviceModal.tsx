@@ -44,6 +44,7 @@ export default function DeviceModal({ open, detailId, editId, onClose }: Props) 
   const [device, setDevice] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [showPwd, setShowPwd] = useState<Record<number, boolean>>({});
+  const [passwords, setPasswords] = useState<Record<number, string>>({});
   const [files, setFiles] = useState<any[]>([]);
   const actualId = detailId || editId;
 
@@ -55,6 +56,7 @@ export default function DeviceModal({ open, detailId, editId, onClose }: Props) 
         .then((res) => {
           setDevice(res.data);
           setShowPwd({});
+          setPasswords({});
         })
         .catch(() => message.error('加载失败'))
         .finally(() => setLoading(false));
@@ -74,7 +76,32 @@ export default function DeviceModal({ open, detailId, editId, onClose }: Props) 
   if (!device && loading) return null;
   const isView = !!detailId;
 
-  const togglePwd = (id: number) => setShowPwd((prev) => ({ ...prev, [id]: !prev[id] }));
+  const canRevealSecrets = ['admin', 'operator'].includes(JSON.parse(localStorage.getItem('user') || '{}').role);
+  const revealPassword = async (id: number) => {
+    if (!canRevealSecrets) {
+      message.error('当前账号没有查看设备密码的权限');
+      return '';
+    }
+    if (passwords[id] !== undefined) return passwords[id];
+    try {
+      const res = await api.get('/accounts/' + id + '/password');
+      const password = res.data.password || '';
+      setPasswords((prev) => ({ ...prev, [id]: password }));
+      return password;
+    } catch {
+      message.error('无权查看密码或密码读取失败');
+      return '';
+    }
+  };
+
+  const togglePwd = async (id: number) => {
+    if (showPwd[id]) {
+      setShowPwd((prev) => ({ ...prev, [id]: false }));
+      return;
+    }
+    const password = await revealPassword(id);
+    if (password) setShowPwd((prev) => ({ ...prev, [id]: true }));
+  };
 
   const acctColumns = [
     {
@@ -93,10 +120,9 @@ export default function DeviceModal({ open, detailId, editId, onClose }: Props) 
     },
     {
       title: '密码',
-      dataIndex: 'password',
       key: 'password',
       width: 250,
-      render: (pwd: string, record: any) => (
+      render: (_: unknown, record: any) => (
         <Space size={2}>
           <span
             style={{
@@ -110,21 +136,24 @@ export default function DeviceModal({ open, detailId, editId, onClose }: Props) 
               display: 'inline-block',
             }}
           >
-            {showPwd[record.id] ? pwd : '••••••••'}
+            {showPwd[record.id] ? passwords[record.id] : '••••••••'}
           </span>
           <Button
             type="text"
             size="small"
             icon={showPwd[record.id] ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-            onClick={() => togglePwd(record.id)}
+            disabled={!canRevealSecrets}
+            onClick={() => void togglePwd(record.id)}
           />
           <Button
             type="text"
             size="small"
             icon={<CopyOutlined />}
             title="复制密码"
+            disabled={!canRevealSecrets}
             onClick={async () => {
-              const ok = await copyText(pwd || '');
+              const password = await revealPassword(record.id);
+              const ok = await copyText(password);
               if (ok) message.success('密码已复制');
               else message.error('复制失败');
             }}

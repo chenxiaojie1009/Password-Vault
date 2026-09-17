@@ -40,8 +40,10 @@ class DeviceAccountCreate(BaseModel):
 
 class DeviceAccountResponse(BaseModel):
     id: int; username: str; notes: str; updated_at: Optional[datetime] = None
-    password_encrypted: str = ""; password: str = ""
     model_config = {"from_attributes": True}
+
+class SecretResponse(BaseModel):
+    password: str
 
 class DeviceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=256); device_type: str = "其他"
@@ -68,7 +70,7 @@ class DeviceListItem(BaseModel):
 class PasswordHistoryResponse(BaseModel):
     id: int; account_id: int; changed_by: int
     changed_by_name: str = ""; changed_at: datetime; reason: str
-    old_password: str = ""; account_name: str = ""; device_name: str = ""
+    account_name: str = ""; device_name: str = ""
     model_config = {"from_attributes": True}
 
 class AuditLogResponse(BaseModel):

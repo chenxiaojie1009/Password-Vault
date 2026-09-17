@@ -120,3 +120,25 @@ class TestAccountManagement:
         client.delete(f"/api/accounts/{dev['accounts'][0]['id']}", headers=admin_token)
         dev_resp = client.get(f"/api/devices/{dev['id']}", headers=admin_token)
         assert len(dev_resp.json()["accounts"]) == 1
+
+    def test_password_is_not_in_device_response_and_requires_secret_permission(self, client, db, admin_token, viewer_token):
+        from models import DeviceAccount, PasswordHistory
+        secret = "NeverInPlaintext!1"
+        dev = client.post("/api/devices", json={
+            "name": "Secure-SW", "device_type": "交换机", "ips": [], "macs": [],
+            "accounts": [{"username": "root", "password": secret, "notes": ""}],
+        }, headers=admin_token).json()
+        account_id = dev["accounts"][0]["id"]
+
+        # Neither the normal device API nor the database history stores/returns plaintext.
+        detail = client.get(f"/api/devices/{dev['id']}", headers=admin_token).json()
+        assert "password" not in detail["accounts"][0]
+        account = db.query(DeviceAccount).filter(DeviceAccount.id == account_id).one()
+        history = db.query(PasswordHistory).filter(PasswordHistory.account_id == account_id).one()
+        assert account.password_encrypted != secret
+        assert history.old_password != secret
+
+        assert client.get(f"/api/accounts/{account_id}/password", headers=viewer_token).status_code == 403
+        revealed = client.get(f"/api/accounts/{account_id}/password", headers=admin_token)
+        assert revealed.status_code == 200
+        assert revealed.json()["password"] == secret

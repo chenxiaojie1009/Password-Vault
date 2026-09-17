@@ -1,7 +1,7 @@
 """
 Password Manager Backend - FastAPI
 """
-import os, sys, re, io, json, shutil, uuid, subprocess
+import os, sys, re, io, json, shutil, uuid, subprocess, threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -34,7 +34,7 @@ from models import (
 from schemas import (
     LoginRequest, TokenResponse, UserCreate, UserResponse,
     DeviceCreate, DeviceUpdate, DeviceResponse, DeviceListItem,
-    DeviceAccountCreate, DeviceAccountResponse,
+    DeviceAccountCreate, DeviceAccountResponse, SecretResponse,
     IPCreate, IPResponse, MACCreate, MACResponse,
     PasswordHistoryResponse, AuditLogResponse,
     PasswordStrengthResult, BatchImportResult, BackupInfo, ExportRequest, ChangePasswordRequest,
@@ -42,8 +42,9 @@ from schemas import (
 )
 from auth import (
     hash_password, verify_password, encrypt_password, decrypt_password,
-    create_access_token, get_current_user, require_admin, require_write, require_operator,
+    create_access_token, get_current_user, require_admin, require_write, require_operator, require_secret_access,
 )
+import tls_bootstrap
 
 # ---- Device level helpers ----
 # Role-level mapping: max device level each role can access
@@ -75,31 +76,57 @@ def check_level_access(device_level: str, current_user: User, hidden: bool = Fal
         raise HTTPException(status_code=403, detail="无权操作该等级设备")
 
 scheduler = BackgroundScheduler()
+# 进程内可能同时跑两个监听器（回环 HTTP + 局域网 HTTPS），两者各自触发一次
+# lifespan，因此初始化与调度器只能执行一份，避免重复启动/并发迁移。
+_startup_lock = threading.Lock()
+_startup_done = False
+
+
+def _initialize_once():
+    global _startup_done
+    with _startup_lock:
+        if _startup_done:
+            return
+        db = next(get_db())
+        try:
+            init_admin(db)
+            migrate_legacy_plaintext_history(db)
+        finally:
+            db.close()
+        # 清理上次升级残留标记（应用重启后视为升级完成）
+        try:
+            if os.path.exists(UPGRADE_APPLYING_FLAG):
+                os.remove(UPGRADE_APPLYING_FLAG)
+        except Exception:
+            pass
+        # 每天凌晨 2:00 自动备份
+        scheduler.add_job(perform_backup, "cron", hour=2, minute=0,
+                          id="daily_backup", replace_existing=True)
+        scheduler.start()
+        _startup_done = True
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 初始化默认管理员（若不存在）
-    db = next(get_db())
-    try:
-        init_admin(db)
-    finally:
-        db.close()
-    # 清理上次升级残留标记（应用重启后视为升级完成）
-    try:
-        if os.path.exists(UPGRADE_APPLYING_FLAG):
-            os.remove(UPGRADE_APPLYING_FLAG)
-    except Exception:
-        pass
-    # 每天凌晨 2:00 自动备份
-    scheduler.add_job(perform_backup, "cron", hour=2, minute=0, id="daily_backup")
-    scheduler.start()
+    _initialize_once()
     yield
-    scheduler.shutdown()
 
 
-app = FastAPI(title="Password Manager", version="2.1.3", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="Password Manager", version="4.0", lifespan=lifespan)
+# LAN clients must use TLS.  Without a certificate the executable binds to loopback
+# only (see __main__), so passwords can never fall back to clear-text LAN HTTP.
+app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=False, allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type"])
+
+@app.middleware("http")
+async def reject_insecure_lan_api(request: Request, call_next):
+    """Do not accept API traffic from a LAN peer over unencrypted HTTP."""
+    client_host = request.client.host if request.client else ""
+    is_local = client_host in {"127.0.0.1", "::1", "localhost", "testclient"}
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
+    is_https = request.url.scheme == "https" or forwarded_proto == "https"
+    if request.url.path.startswith("/api/") and not is_local and not is_https:
+        return Response(status_code=426, content="HTTPS is required for LAN access")
+    return await call_next(request)
 Base.metadata.create_all(bind=engine)
 BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -108,7 +135,7 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ---- Online Upgrade (v2.0) ----
-APP_VERSION = "2.1.3"
+APP_VERSION = "4.0"
 UPGRADE_DIR = os.path.join(BASE_DIR, "upgrade")
 os.makedirs(UPGRADE_DIR, exist_ok=True)
 UPGRADE_NEW_EXE = os.path.join(UPGRADE_DIR, "DeviceManager_new.exe")
@@ -137,6 +164,19 @@ def init_admin(db: Session):
         db.commit()
 
 
+def migrate_legacy_plaintext_history(db: Session):
+    """Encrypt history values written by versions that stored old_password in plain text."""
+    changed = False
+    for item in db.query(PasswordHistory).filter(PasswordHistory.old_password.isnot(None)).all():
+        value = item.old_password or ""
+        # Fernet tokens generated by this application always start with gAAAA.
+        if value and not value.startswith("gAAAA"):
+            item.old_password = encrypt_password(value)
+            changed = True
+    if changed:
+        db.commit()
+
+
 def write_audit(db: Session, user_id: int, action: str, target_type: str = "",
                 target_id: int = None, detail: str = "", ip_address: str = ""):
     db.add(AuditLog(user_id=user_id, action=action, target_type=target_type,
@@ -145,12 +185,9 @@ def write_audit(db: Session, user_id: int, action: str, target_type: str = "",
 
 
 def _account_to_response(a: DeviceAccount) -> DeviceAccountResponse:
-    plain = ""
-    try: plain = decrypt_password(a.password_encrypted)
-    except Exception: plain = "[decrypt error]"
+    """Never include the cipher text or plain secret in normal device responses."""
     return DeviceAccountResponse(
         id=a.id, username=a.username, notes=a.notes, updated_at=a.updated_at,
-        password_encrypted=a.password_encrypted, password=plain,
     )
 
 
@@ -449,7 +486,7 @@ def create_device(body: DeviceCreate, request: Request, db: Session = Depends(ge
         enc = encrypt_password(ac.password)
         a = DeviceAccount(device_id=d.id, username=ac.username, password_encrypted=enc, notes=ac.notes)
         db.add(a); db.flush()
-        db.add(PasswordHistory(account_id=a.id, old_password_hash=enc, old_password=ac.password, changed_by=current_user.id, reason="初始创建"))
+        db.add(PasswordHistory(account_id=a.id, old_password_hash=enc, old_password=enc, changed_by=current_user.id, reason="初始创建"))
     db.commit(); db.refresh(d)
     ip = request.client.host if request.client else ""
     write_audit(db, current_user.id, "create", "device", d.id, f"创建设备 {d.name}", ip)
@@ -531,7 +568,7 @@ def add_account(device_id: int, body: DeviceAccountCreate, request: Request,
     enc = encrypt_password(body.password)
     a = DeviceAccount(device_id=device_id, username=body.username, password_encrypted=enc, notes=body.notes)
     db.add(a); db.flush()
-    db.add(PasswordHistory(account_id=a.id, old_password_hash=enc, old_password=body.password, changed_by=current_user.id, reason="新增账号"))
+    db.add(PasswordHistory(account_id=a.id, old_password_hash=enc, old_password=enc, changed_by=current_user.id, reason="新增账号"))
     db.commit(); db.refresh(a)
     write_audit(db, current_user.id, "create", "account", a.id,
                 f"为设备 {dev.name} 添加账号 {body.username}",
@@ -546,13 +583,10 @@ def update_account_password(account_id: int, body: DeviceAccountCreate, request:
     if not a: raise HTTPException(status_code=404, detail="账号不存在")
     _check_account_device_access(a, db, current_user)
     old_enc = a.password_encrypted
-    old_plain = ""
-    try: old_plain = decrypt_password(old_enc)
-    except Exception: old_plain = ""
     a.password_encrypted = encrypt_password(body.password)
     a.notes = body.notes if body.notes else a.notes
     a.updated_at = beijing_now()
-    db.add(PasswordHistory(account_id=a.id, old_password_hash=old_enc, old_password=old_plain, changed_by=current_user.id,
+    db.add(PasswordHistory(account_id=a.id, old_password_hash=old_enc, old_password=old_enc, changed_by=current_user.id,
            reason=body.notes or "密码变更"))
     db.commit(); db.refresh(a)
     write_audit(db, current_user.id, "update", "account", a.id,
@@ -726,10 +760,46 @@ def _pw_hist_to_response(h: PasswordHistory, db: Session) -> PasswordHistoryResp
         id=h.id, account_id=h.account_id, changed_by=h.changed_by,
         changed_by_name=u.display_name or u.username if u else "未知",
         changed_at=h.changed_at, reason=h.reason,
-        old_password=h.old_password or "",
         account_name=a.username if a else "",
         device_name=dev.name if dev else "",
     )
+
+
+@app.get("/api/accounts/{account_id}/password", response_model=SecretResponse)
+def reveal_account_password(account_id: int, request: Request, db: Session = Depends(get_db),
+                            current_user: User = Depends(require_secret_access)):
+    """Decrypt one device password only after role and device-level checks succeed."""
+    account = db.query(DeviceAccount).filter(DeviceAccount.id == account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    _check_account_device_access(account, db, current_user)
+    try:
+        password = decrypt_password(account.password_encrypted)
+    except Exception:
+        raise HTTPException(status_code=500, detail="密码解密失败")
+    write_audit(db, current_user.id, "reveal_password", "account", account.id,
+                f"查看设备账号 {account.username} 的密码", request.client.host if request.client else "")
+    return SecretResponse(password=password)
+
+
+@app.get("/api/password-history/{history_id}/password", response_model=SecretResponse)
+def reveal_history_password(history_id: int, request: Request, db: Session = Depends(get_db),
+                            current_user: User = Depends(require_secret_access)):
+    """Decrypt a historical password only for an authorized secret viewer."""
+    history = db.query(PasswordHistory).filter(PasswordHistory.id == history_id).first()
+    if not history:
+        raise HTTPException(status_code=404, detail="密码历史不存在")
+    account = db.query(DeviceAccount).filter(DeviceAccount.id == history.account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    _check_account_device_access(account, db, current_user)
+    try:
+        password = decrypt_password(history.old_password)
+    except Exception:
+        raise HTTPException(status_code=500, detail="历史密码解密失败")
+    write_audit(db, current_user.id, "reveal_password_history", "password_history", history.id,
+                f"查看设备账号 {account.username} 的历史密码", request.client.host if request.client else "")
+    return SecretResponse(password=password)
 
 @app.get("/api/accounts/{account_id}/history", response_model=List[PasswordHistoryResponse])
 def get_password_history(account_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -803,7 +873,7 @@ def list_audit_logs(action: str = Query(""), user_id: int = Query(None), usernam
 # ---- Export ----
 @app.post("/api/export")
 def export_devices(body: ExportRequest, request: Request, db: Session = Depends(get_db),
-                   current_user: User = Depends(get_current_user)):
+                   current_user: User = Depends(require_secret_access)):
     try: import openpyxl; from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     except ImportError: raise HTTPException(status_code=500, detail="openpyxl 未安装")
     try:
@@ -948,7 +1018,7 @@ async def import_devices_xlsx(request: Request, file: UploadFile = File(...),
                 if uname and pwd:
                     a = DeviceAccount(device_id=dev.id, username=uname, password_encrypted=encrypt_password(pwd), notes=notes)
                     db.add(a); db.flush()
-                    db.add(PasswordHistory(account_id=a.id, old_password_hash=a.password_encrypted, old_password=pwd,
+                    db.add(PasswordHistory(account_id=a.id, old_password_hash=a.password_encrypted, old_password=a.password_encrypted,
                            changed_by=current_user.id, reason="批量导入"))
                 result.success += 1
             except Exception as e: result.failed += 1; result.errors.append(f"第{i}行：{str(e)}")
@@ -1261,6 +1331,63 @@ async def serve_frontend(full_path: str):
     return {"message": "前端未构建"}
 
 
+def _announce_lan_endpoint(urls, fingerprint, dialog):
+    """把局域网访问地址与证书指纹写给运维（控制台日志 + 首次生成时弹一次）。"""
+    lines = ["局域网 / 手机访问地址：", *urls, ""]
+    if fingerprint:
+        lines += ["证书指纹（SHA-256）：", fingerprint, ""]
+    lines += ["桌面端请继续用 http://127.0.0.1:%s （无需证书）。" % os.environ.get("DM_PORT", "8000"),
+              "手机端首次连接会提示证书不受信任，核对指纹后确认即可。"]
+    message = "\n".join(lines)
+    try:
+        print(f"[DeviceManager] {message}", flush=True)
+    except Exception:
+        pass
+    if dialog and getattr(sys, "frozen", False) and os.name == "nt":
+        def _show():
+            try:
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(None, message, "设备管理器 - 局域网访问", 0x40)
+            except Exception:
+                pass
+        threading.Thread(target=_show, daemon=True).start()
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("DM_PORT", "8000")))
+
+    http_port = int(os.environ.get("DM_PORT", "8000"))
+    # 默认与 HTTP 同端口：同一端口上回环走 HTTP、局域网地址走 HTTPS，互不干扰
+    https_port = int(os.environ.get("DM_TLS_PORT", str(http_port)))
+    cert_file = os.environ.get("DM_TLS_CERT_FILE", "")
+    key_file = os.environ.get("DM_TLS_KEY_FILE", "")
+    if bool(cert_file) != bool(key_file):
+        raise RuntimeError("DM_TLS_CERT_FILE 和 DM_TLS_KEY_FILE 必须同时配置")
+
+    fingerprint = ""
+    generated = False
+    if not cert_file:
+        # 没配证书就用自签名证书顶上：局域网依然加密，但不给运维加手工签发门槛
+        try:
+            cert_file, key_file, generated = tls_bootstrap.ensure_certificate(BASE_DIR)
+        except Exception as exc:
+            cert_file = key_file = ""
+            print(f"[DeviceManager] 自签名证书生成失败，本次仅提供本机访问：{exc}", flush=True)
+
+    if cert_file and https_port > 0:
+        try:
+            fingerprint = tls_bootstrap.fingerprint_of(cert_file)
+        except Exception:
+            fingerprint = ""
+        lan_urls = [f"https://{ip}:{https_port}" for ip in tls_bootstrap.local_ipv4_addresses()]
+        _announce_lan_endpoint(lan_urls, fingerprint, dialog=generated)
+        # 局域网 HTTPS 监听（具体 IP 的绑定优先于 0.0.0.0，所以回环仍是明文 HTTP）
+        threading.Thread(
+            target=uvicorn.run,
+            kwargs=dict(app=app, host=os.environ.get("DM_BIND_HOST", "0.0.0.0"),
+                        port=https_port, ssl_certfile=cert_file, ssl_keyfile=key_file),
+            daemon=True, name="lan-https",
+        ).start()
+
+    # 桌面端固定回环明文：浏览器不弹证书警告，启动脚本打开的地址保持不变
+    uvicorn.run(app, host="127.0.0.1", port=http_port)
